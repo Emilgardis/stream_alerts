@@ -165,7 +165,8 @@ pub async fn run(opts: &Opts) -> color_eyre::Result<()> {
                 .wrap_err_with(|| "when parsing address")?,
         )
         .serve(app.into_make_service())
-        .await.wrap_err_with(|| "when serving")?;
+        .await
+        .wrap_err_with(|| "when serving")?;
         Ok::<(), color_eyre::Report>(())
     });
 

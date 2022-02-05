@@ -1,4 +1,4 @@
-use clap::{Parser, ArgSettings};
+use clap::{ArgSettings, Parser};
 
 #[derive(Parser, Debug)]
 #[clap(about, version, long_version = &**crate::util::LONG_VERSION )]

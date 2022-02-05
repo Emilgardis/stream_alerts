@@ -50,11 +50,11 @@ fn install_tracing() {
         .or_else(|_| EnvFilter::try_new("info"))
         .map(|f| {
             f.add_directive("hyper=error".parse().unwrap())
-            .add_directive("h2=error".parse().unwrap())
-            .add_directive("rustls=error".parse().unwrap())
-            .add_directive("tungstenite=error".parse().unwrap())
+                .add_directive("h2=error".parse().unwrap())
+                .add_directive("rustls=error".parse().unwrap())
+                .add_directive("tungstenite=error".parse().unwrap())
             //.add_directive("tower_http=error".parse().unwrap())
-    })
+        })
         .unwrap();
 
     tracing_subscriber::registry()
