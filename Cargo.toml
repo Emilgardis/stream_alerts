@@ -7,22 +7,26 @@ rust-version = "1.58"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-clap = { version = "3.0", features = ["derive"] }
+clap = { version = "3.0", features = ["derive", "env"] }
 color-eyre = { version = "0.6", features = ["capture-spantrace"] }
 dotenv = "0.15.0"
 eyre = { version = "0.6" }
 once_cell = "1.9.0"
-tokio = { version = "1.15", features = ["rt-multi-thread", "macros"] }
+tokio = { version = "1.15", features = ["rt-multi-thread", "macros", "parking_lot"] }
 tracing = "0.1.29"
 tracing-error = "0.2.0"
 tracing-log = "0.1.2"
 tracing-subscriber = { version = "0.3.6", features = ["env-filter"] }
-axum = { version = "0.4.5", features = ["tower-log", "http2"] }
-twitch_api2 = { version = "0.6.0-rc.3", features = ["twitch_api2"] }
-
+axum = { version = "0.4.5", features = ["tower-log", "http2", "ws"] }
+twitch_api2 = { version = "0.6.0-rc.3", features = ["helix", "reqwest_client"] }
+futures = { version = "0.3" }
+reqwest = { version = "*", default-features = false, features = ["rustls-tls"] }
 [build-dependencies]
-built = { version = "0.5.1", features = ["chrono", "git2", "ws"] }
+built = { version = "0.5.1", features = ["chrono", "git2"] }
 
 
 [profile.dev.package.backtrace]
 opt-level = 3
+
+[patch.crates-io]
+twitch_api2 = { git = "https://github.com/Emilgardis/twitch_api2" }
