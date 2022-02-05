@@ -1,7 +1,6 @@
 use eyre::Context;
 use once_cell::sync::Lazy;
 
-
 pub mod built_info {
     include!(concat!(env!("OUT_DIR"), "/built.rs"));
 }
@@ -41,7 +40,7 @@ fn install_eyre() -> eyre::Result<()> {
     Ok(())
 }
 
-fn install_tracing(){
+fn install_tracing() {
     use tracing_error::ErrorLayer;
     use tracing_subscriber::prelude::*;
     use tracing_subscriber::{fmt, EnvFilter};
@@ -49,6 +48,13 @@ fn install_tracing(){
     let fmt_layer = fmt::layer().with_target(true);
     let filter_layer = EnvFilter::try_from_default_env()
         .or_else(|_| EnvFilter::try_new("info"))
+        .map(|f| {
+            f.add_directive("hyper=error".parse().unwrap())
+            .add_directive("h2=error".parse().unwrap())
+            .add_directive("rustls=error".parse().unwrap())
+            .add_directive("tungstenite=error".parse().unwrap())
+            //.add_directive("tower_http=error".parse().unwrap())
+    })
         .unwrap();
 
     tracing_subscriber::registry()
@@ -56,6 +62,4 @@ fn install_tracing(){
         .with(fmt_layer)
         .with(ErrorLayer::default())
         .init();
-
-    
 }

@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<!--[if lt IE 7]>      <html class="no-js lt-ie9 lt-ie8 lt-ie7"> <![endif]-->
+<!--[if IE 7]>         <html class="no-js lt-ie9 lt-ie8"> <![endif]-->
+<!--[if IE 8]>         <html class="no-js lt-ie9"> <![endif]-->
+<!--[if gt IE 8]>      <html class="no-js"> <!--<![endif]-->
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <title>Is Sessis Live</title>
+    <meta name="description" content="" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="stylesheet" href="/static/style.css" />
+    <script>
+      // add ws listener and on update change the page
+      const protocol =
+        window.location.protocol === "http:" ? "ws://" : "wss://";
+      var timerId;
+      function connect() {
+        var ws = new WebSocket(protocol + window.location.host + "/ws");
+        ws.onmessage = function (event) {
+          var data = JSON.parse(event.data);
+          if (data.type === "update") {
+            window.location.reload();
+          }
+          document.getElementById("is_live").innerHTML = data.html;
+        };
+        ws.onopen = function () {
+          clearInterval(timerId);
+
+          ws.onclose = function () {
+            timerId = setInterval(() => {
+              connect();
+            }, 10000);
+          };
+        };
+      }
+      connect()
+    </script>
+    <!--Set document path to /-->
+  </head>
+  <body>
+    <!--[if lt IE 7]>
+      <p class="browsehappy">
+        You are using an <strong>outdated</strong> browser. Please
+        <a href="#">upgrade your browser</a> to improve your experience.
+      </p>
+    <![endif]-->
+    <a id="is_live" href="https://twitch.tv/sessis">{%if is_live -%} Yes! {%else -%} No :( {% endif -%}</a>
+  </body>
+</html>
