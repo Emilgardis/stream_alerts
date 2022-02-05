@@ -1,3 +1,4 @@
+#![warn(clippy::unwrap_in_result)]
 pub mod opts;
 pub mod util;
 
@@ -60,7 +61,7 @@ pub async fn run(opts: &Opts) -> color_eyre::Result<()> {
         <reqwest::Client>::default_client_with_name(Some(
             "is.sessis.live"
                 .parse()
-                .wrap_err_with(|| "when creating header name")?,
+                .wrap_err_with(|| "when creating header name").unwrap(),
         ))
         .wrap_err_with(|| "when creating client")?,
     );
@@ -91,7 +92,7 @@ pub async fn run(opts: &Opts) -> color_eyre::Result<()> {
             match is_live(&broadcaster_id, &client2, &*token2.lock().await).await {
                 Ok(live) => {
                     if live != last {
-                        sender2.send(live).unwrap();
+                        sender2.send(live)?;
                     }
                 }
                 Err(e) => {
@@ -127,8 +128,7 @@ pub async fn run(opts: &Opts) -> color_eyre::Result<()> {
                 client_secret.clone(),
                 vec![],
             )
-            .await
-            .unwrap();
+            .await?;
         }
         #[allow(unreachable_code)]
         Ok::<(), color_eyre::Report>(())
@@ -142,7 +142,7 @@ pub async fn run(opts: &Opts) -> color_eyre::Result<()> {
                 move |ws| handler(ws, recv)
             }),
         )
-        .route("/", get(move |uri| serve_index(uri, recv.borrow().clone())))
+        .route("/", get(move || serve_index(recv.borrow().clone())))
         .nest(
             "/static",
             get_service(ServeDir::new("./static/")).handle_error(|error| async move {
@@ -248,7 +248,7 @@ pub async fn is_live(
             started_at: stream.started_at.clone(),
         })
     } else {
-        let channel = client
+        let _channel = client
             .get_channel_from_id(channel, token)
             .await?
             .ok_or_else(|| eyre::eyre!("channel not found"))?;
@@ -358,7 +358,7 @@ async fn twitch_eventsub(
     todo!()
 }
 
-async fn serve_index(uri: axum::http::Uri, live: LiveStatus) -> impl IntoResponse {
+async fn serve_index(live: LiveStatus) -> impl IntoResponse {
     if live.is_live() {
         IsLiveTemplate::live()
     } else {
@@ -370,23 +370,32 @@ async fn handler(ws: WebSocketUpgrade, watch: watch::Receiver<LiveStatus>) -> im
     ws.on_upgrade(|f| handle_socket(f, watch))
 }
 
-async fn handle_socket(socket: WebSocket, watch: watch::Receiver<LiveStatus>) {
+async fn handle_socket(
+    socket: WebSocket,
+    watch: watch::Receiver<LiveStatus>,
+) -> Result<(), eyre::Report> {
     let (sender, receiver) = socket.split();
 
-    tokio::join!(
-        tokio::spawn(write(sender, watch)),
-        tokio::spawn(read(receiver))
-    );
+    tokio::try_join!(
+        flatten(tokio::spawn(write(sender, watch))),
+        flatten(tokio::spawn(read(receiver)))
+    )
+    .wrap_err_with(|| "in stream join")
+    .map(|_| ())
 }
 // Reads, basically only responds to pongs. Should not be a need for refreshes, but maybe.
-async fn read(mut receiver: SplitStream<WebSocket>) {
+async fn read(mut receiver: SplitStream<WebSocket>) -> Result<(), eyre::Report> {
     while let Some(msg) = receiver.next().await {
         tracing::info!(message = ?msg, "got message")
     }
+    Ok(())
 }
 
 // Sends live status to clients.
-async fn write(mut sender: SplitSink<WebSocket, Message>, mut watch: watch::Receiver<LiveStatus>) {
+async fn write(
+    mut sender: SplitSink<WebSocket, Message>,
+    mut watch: watch::Receiver<LiveStatus>,
+) -> Result<(), eyre::Report> {
     while watch.changed().await.is_ok() {
         let val = watch.borrow().clone();
         if let Ok(msg) = val.to_message() {
@@ -403,4 +412,5 @@ async fn write(mut sender: SplitSink<WebSocket, Message>, mut watch: watch::Rece
             };
         }
     }
+    Ok(())
 }

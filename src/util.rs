@@ -49,13 +49,13 @@ fn install_tracing() {
     let filter_layer = EnvFilter::try_from_default_env()
         .or_else(|_| EnvFilter::try_new("info"))
         .map(|f| {
-            f.add_directive("hyper=error".parse().unwrap())
-                .add_directive("h2=error".parse().unwrap())
-                .add_directive("rustls=error".parse().unwrap())
-                .add_directive("tungstenite=error".parse().unwrap())
+            f.add_directive("hyper=error".parse().expect("could not make directive"))
+                .add_directive("h2=error".parse().expect("could not make directive"))
+                .add_directive("rustls=error".parse().expect("could not make directive"))
+                .add_directive("tungstenite=error".parse().expect("could not make directive"))
             //.add_directive("tower_http=error".parse().unwrap())
         })
-        .unwrap();
+        .expect("could not make filter layer");
 
     tracing_subscriber::registry()
         .with(filter_layer)
