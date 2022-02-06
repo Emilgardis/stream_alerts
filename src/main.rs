@@ -435,8 +435,8 @@ async fn twitch_eventsub(
 
     let request = axum::http::Request::from_parts(parts, &*body);
 
-    tracing::info!("got event {}", std::str::from_utf8(request.body()).unwrap());
-    tracing::info!("got event headers {:?}", request.headers());
+    tracing::debug!("got event {}", std::str::from_utf8(request.body()).unwrap());
+    tracing::debug!("got event headers {:?}", request.headers());
     if !Event::verify_payload(&request, opts.sign_secret.secret()) {
         return (
             StatusCode::BAD_REQUEST,
@@ -444,8 +444,8 @@ async fn twitch_eventsub(
         );
     }
     // Event is verified, now do stuff.
-    //let event = Event::parse(&request).unwrap();
-    let event = Event::parse(std::str::from_utf8(request.body()).unwrap()).unwrap();
+    let event = Event::parse(&request).unwrap();
+    //let event = Event::parse(std::str::from_utf8(request.body()).unwrap()).unwrap();
     tracing::info_span!("valid_event", event=?event);
     tracing::info!("got event!");
 
