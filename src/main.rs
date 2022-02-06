@@ -301,7 +301,7 @@ async fn handle_error(err: axum::BoxError) -> impl IntoResponse {
     //tracing::error!(error=%err, "error occured");
     (
         StatusCode::INTERNAL_SERVER_ERROR,
-        format!("Unhandled internal error"),
+        "Unhandled internal error".to_string(),
     )
 }
 
@@ -438,13 +438,10 @@ async fn twitch_eventsub(
     tracing::debug!("got event {}", std::str::from_utf8(request.body()).unwrap());
     tracing::debug!("got event headers {:?}", request.headers());
     if !Event::verify_payload(&request, opts.sign_secret.secret()) {
-        return (
-            StatusCode::BAD_REQUEST,
-            "Invalid signature".to_string(),
-        );
+        return (StatusCode::BAD_REQUEST, "Invalid signature".to_string());
     }
     // Event is verified, now do stuff.
-    let event = Event::parse(&request).unwrap();
+    let event = Event::parse_http(&request).unwrap();
     //let event = Event::parse(std::str::from_utf8(request.body()).unwrap()).unwrap();
     tracing::info_span!("valid_event", event=?event);
     tracing::info!("got event!");
@@ -463,9 +460,7 @@ async fn twitch_eventsub(
         Event::ChannelUpdateV1(P {
             message: M::Notification(notification),
             ..
-        }) => {
-            
-        }
+        }) => {}
         Event::StreamOnlineV1(P {
             message: M::Notification(notification),
             ..
@@ -480,10 +475,9 @@ async fn twitch_eventsub(
             message: M::Notification(notification),
             ..
         }) => sender.send(LiveStatus::Offline).unwrap(),
-        _ => {},
+        _ => {}
     }
-    (StatusCode::OK,String::default())
-
+    (StatusCode::OK, String::default())
 }
 
 async fn serve_index(live: LiveStatus) -> impl IntoResponse {
