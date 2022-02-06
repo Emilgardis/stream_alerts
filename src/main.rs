@@ -31,7 +31,11 @@ use tokio::{sync::watch, task::JoinHandle};
 use tower_http::{catch_panic::CatchPanicLayer, services::ServeDir, trace::TraceLayer};
 use twitch_api2::{
     client::ClientDefault,
-    eventsub::{self, Event},
+    eventsub::{
+        self,
+        stream::{StreamOfflineV1Payload, StreamOnlineV1Payload},
+        Event,
+    },
     helix::{self},
     twitch_oauth2::{AppAccessToken, TwitchToken},
     types::{self, UserIdRef},
@@ -447,34 +451,56 @@ async fn twitch_eventsub(
     tracing::info!("got event!");
 
     if let Some(ver) = event.get_verification_request() {
+        tracing::info!("subscription was verified");
         return (StatusCode::OK, ver.challenge.clone());
     }
 
     if event.is_revocation() {
-        tracing::info!(event=?event, "subscription was revoked");
+        tracing::info!("subscription was revoked");
         return (StatusCode::OK, "".to_string());
     }
     use twitch_api2::eventsub::{Message as M, Payload as P};
 
+    // TODO: Some people have reported wierd bouncing when subscribing to stream.online/stream.offline, track this somehow.
+
     match event {
         Event::ChannelUpdateV1(P {
-            message: M::Notification(notification),
+            message: M::Notification(_notification),
             ..
         }) => {}
         Event::StreamOnlineV1(P {
-            message: M::Notification(notification),
+            message:
+                M::Notification(StreamOnlineV1Payload {
+                    broadcaster_user_id,
+                    started_at,
+                    ..
+                }),
             ..
-        }) => {
-            sender
-                .send(LiveStatus::Live {
-                    started_at: notification.started_at.clone(),
-                })
-                .unwrap();
+        }) if broadcaster_user_id == opts.broadcaster_id => {
+            tracing::info!(broadcaster_id=?broadcaster_user_id, "sending live status to clients");
+            let _ = sender.send(LiveStatus::Live { started_at });
         }
         Event::StreamOfflineV1(P {
-            message: M::Notification(notification),
+            message:
+                M::Notification(StreamOfflineV1Payload {
+                    broadcaster_user_id,
+                    ..
+                }),
             ..
-        }) => sender.send(LiveStatus::Offline).unwrap(),
+        }) if broadcaster_user_id == opts.broadcaster_id => {
+            tracing::info!(broadcaster_id=?broadcaster_user_id, "sending offline status to clients");
+            let _ = sender.send(LiveStatus::Offline);
+        }
+        Event::StreamOnlineV1(P {
+            message: M::Notification(_),
+            ..
+        })
+        | Event::StreamOfflineV1(P {
+            message: M::Notification(_),
+            ..
+        }) => {
+            tracing::info!("got online/offline status for another broadcaster, ignoring");
+        }
         _ => {}
     }
     (StatusCode::OK, String::default())
