@@ -534,7 +534,7 @@ async fn handle_socket(
 // Reads, basically only responds to pongs. Should not be a need for refreshes, but maybe.
 async fn read(mut receiver: SplitStream<WebSocket>) -> Result<(), eyre::Report> {
     while let Some(msg) = receiver.next().await {
-        tracing::info!(message = ?msg, "got message")
+        tracing::debug!(message = ?msg, "got message")
     }
     Ok(())
 }
