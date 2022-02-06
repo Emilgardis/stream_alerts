@@ -1780,6 +1780,7 @@ dependencies = [
 [[package]]
 name = "twitch_api2"
 version = "0.6.0-rc.3"
+source = "git+https://github.com/Emilgardis/twitch_api2#fff58ea9449f29022bb1f3390c1ebea16c71eeab"
 dependencies = [
  "aliri_braid",
  "async-trait",
@@ -1805,7 +1806,8 @@ dependencies = [
 
 [[package]]
 name = "twitch_oauth2"
-version = "0.6.1"
+version = "0.6.0"
+source = "git+https://github.com/Emilgardis/twitch_api2#fff58ea9449f29022bb1f3390c1ebea16c71eeab"
 dependencies = [
  "aliri_braid",
  "async-trait",

@@ -283,7 +283,7 @@ pub async fn run(opts: &Opts) -> color_eyre::Result<()> {
         flatten(server),
         flatten(tokio::spawn(checker)),
         flatten(tokio::spawn(refresher)),
-        //flatten(tokio::spawn(eventsub_register)),
+        flatten(tokio::spawn(eventsub_register)),
     );
     r?;
     Ok(())

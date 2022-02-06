@@ -38,6 +38,6 @@ built = { version = "0.5.1", features = ["chrono", "git2"] }
 opt-level = 3
 
 [patch.crates-io]
-#twitch_api2 = { git = "https://github.com/Emilgardis/twitch_api2" }
+twitch_api2 = { git = "https://github.com/Emilgardis/twitch_api2" }
 tower-http = {git = "https://github.com/tower-rs/tower-http.git", rev = "f26edbb"}
-twitch_api2 = { path = "../twitch_api2" }
+#twitch_api2 = { path = "../twitch_api2" }
