@@ -748,6 +748,7 @@ dependencies = [
  "serde_json",
  "tokio",
  "tokio-tungstenite",
+ "tower",
  "tower-http",
  "tracing",
  "tracing-error",
@@ -1645,8 +1646,7 @@ dependencies = [
 [[package]]
 name = "tower-http"
 version = "0.2.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "03650267ad175b51c47d02ed9547fc7d4ba2c7e5cb76df0bed67edd1825ae297"
+source = "git+https://github.com/tower-rs/tower-http.git?rev=f26edbb#f26edbb2e526417b9765902bbdc96269a773b377"
 dependencies = [
  "bitflags",
  "bytes",
@@ -1780,7 +1780,6 @@ dependencies = [
 [[package]]
 name = "twitch_api2"
 version = "0.6.0-rc.3"
-source = "git+https://github.com/Emilgardis/twitch_api2#5290bf2726e8385c7405d6093e871b5657001007"
 dependencies = [
  "aliri_braid",
  "async-trait",
@@ -1806,8 +1805,7 @@ dependencies = [
 
 [[package]]
 name = "twitch_oauth2"
-version = "0.6.0"
-source = "git+https://github.com/Emilgardis/twitch_api2#5290bf2726e8385c7405d6093e871b5657001007"
+version = "0.6.1"
 dependencies = [
  "aliri_braid",
  "async-trait",

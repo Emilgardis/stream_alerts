@@ -25,7 +25,8 @@ askama = {version = "0.11", features = ["with-axum"] }
 askama_axum = {version = "0.1"}
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1" }
-tower-http = {version = "0.2.1", features = ["fs", "trace"]}
+tower-http = {version = "0.2.1", features = ["fs", "trace", "catch-panic"]}
+tower = "0.4"
 tokio-tungstenite = "0.16.1"
 hyper = "0.14"
 
@@ -37,4 +38,6 @@ built = { version = "0.5.1", features = ["chrono", "git2"] }
 opt-level = 3
 
 [patch.crates-io]
-twitch_api2 = { git = "https://github.com/Emilgardis/twitch_api2" }
+#twitch_api2 = { git = "https://github.com/Emilgardis/twitch_api2" }
+tower-http = {git = "https://github.com/tower-rs/tower-http.git", rev = "f26edbb"}
+twitch_api2 = { path = "../twitch_api2" }

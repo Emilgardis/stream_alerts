@@ -15,4 +15,5 @@ ARG RUN_DEPS
 RUN apk add --no-cache \
         ${RUN_DEPS}
 COPY --from=builder /app/is_sessis_live /app/is_sessis_live
+COPY ./static ./static
 ENTRYPOINT "/app/is_sessis_live"

@@ -1,6 +1,6 @@
 use clap::{ArgSettings, Parser};
 
-#[derive(Parser, Debug)]
+#[derive(Parser, Debug, Clone)]
 #[clap(about, version, long_version = &**crate::util::LONG_VERSION )]
 pub struct Opts {
     #[clap(long, env, setting = ArgSettings::HideEnvValues, parse(from_str))]
@@ -11,4 +11,6 @@ pub struct Opts {
     pub sign_secret: crate::SignSecret,
     #[clap(long, env, setting = ArgSettings::HideEnvValues, parse(from_str))]
     pub broadcaster_id: twitch_api2::types::UserId,
+    #[clap(long, env, setting = ArgSettings::HideEnvValues)]
+    pub website_callback: String,
 }
