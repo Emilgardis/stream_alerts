@@ -46,6 +46,7 @@ fn install_tracing() {
     use tracing_subscriber::{fmt, EnvFilter};
 
     let fmt_layer = fmt::layer().with_target(true);
+    #[rustfmt::skip]
     let filter_layer = EnvFilter::try_from_default_env()
         .or_else(|_| EnvFilter::try_new("info"))
         .map(|f| {
