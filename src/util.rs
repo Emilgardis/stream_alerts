@@ -1,4 +1,3 @@
-use eyre::Context;
 use once_cell::sync::Lazy;
 
 pub mod built_info {
