@@ -29,15 +29,9 @@ use clap::Parser;
 use eyre::Context;
 
 use reqwest::StatusCode;
-use tokio::{
-    sync::{watch},
-    task::JoinHandle,
-};
+use tokio::{sync::watch, task::JoinHandle};
 use tower_http::{catch_panic::CatchPanicLayer, services::ServeDir, trace::TraceLayer};
-use twitch_api2::{
-    client::ClientDefault,
-    HelixClient,
-};
+use twitch_api2::{client::ClientDefault, HelixClient};
 
 #[tokio::main]
 async fn main() -> Result<(), eyre::Report> {
@@ -77,7 +71,13 @@ pub async fn run(opts: &Opts) -> eyre::Result<()> {
     )
     .await?;
 
-    let live = twitch::is_live(&opts.broadcaster_id, &client, &token).await?;
+    let broadcaster_id = client
+        .get_channel_from_login(&*opts.broadcaster_login, &token)
+        .await?
+        .ok_or_else(|| eyre::eyre!("broadcaster not found"))?
+        .broadcaster_id;
+
+    let live = twitch::is_live(&broadcaster_id, &client, &token).await?;
 
     let token = Arc::new(tokio::sync::RwLock::new(token));
     let (sender, recv) = watch::channel(live);
@@ -99,7 +99,15 @@ pub async fn run(opts: &Opts) -> eyre::Result<()> {
             }),
         )
         .route("/", get(move || serve_index(recv.borrow().clone())))
-        .route("/twitch/eventsub", post(twitch::twitch_eventsub))
+        .route(
+            "/twitch/eventsub",
+            post({
+                let broadcaster_id = broadcaster_id.clone();
+                move |sender, opts, cache, request| {
+                    twitch::twitch_eventsub(sender, opts, cache, request, broadcaster_id)
+                }
+            }),
+        )
         .nest(
             "/static",
             get_service(ServeDir::new("./static/")).handle_error(|error| async move {
@@ -142,7 +150,7 @@ pub async fn run(opts: &Opts) -> eyre::Result<()> {
         flatten(tokio::spawn(twitch::checker(
             sender.clone(),
             client.clone(),
-            opts.broadcaster_id.clone(),
+            broadcaster_id.clone(),
             token.clone()
         ))),
         flatten(tokio::spawn(twitch::refresher(
@@ -155,7 +163,7 @@ pub async fn run(opts: &Opts) -> eyre::Result<()> {
             token.clone(),
             client.clone(),
             opts.website_callback.clone(),
-            opts.broadcaster_id.clone(),
+            broadcaster_id.clone(),
             opts.sign_secret.clone()
         ))),
         flatten(tokio::spawn(retainer_cleanup)),
@@ -184,19 +192,30 @@ async fn handle_error(err: axum::BoxError) -> impl IntoResponse {
 #[template(path = "is_live.html")]
 struct IsLiveTemplate {
     is_live: bool,
+    broadcaster_url: String,
 }
 
 impl IsLiveTemplate {
-    fn live() -> Self { Self { is_live: true } }
+    fn live(broadcaster_url: String) -> Self {
+        Self {
+            is_live: true,
+            broadcaster_url,
+        }
+    }
 
-    fn offline() -> Self { Self { is_live: false } }
+    fn offline(broadcaster_url: String) -> Self {
+        Self {
+            is_live: false,
+            broadcaster_url,
+        }
+    }
 }
 
 async fn serve_index(live: LiveStatus) -> impl IntoResponse {
     if live.is_live() {
-        IsLiveTemplate::live()
+        IsLiveTemplate::live(live.url().clone())
     } else {
-        IsLiveTemplate::offline()
+        IsLiveTemplate::offline(live.url().clone())
     }
 }
 

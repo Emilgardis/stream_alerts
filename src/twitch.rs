@@ -1,14 +1,20 @@
 use std::{collections::VecDeque, sync::Arc};
 
-use axum::{body::HttpBody, extract::{Extension, ws}, http, response::IntoResponse};
+use axum::{
+    body::HttpBody,
+    extract::{ws, Extension},
+    http,
+    response::IntoResponse,
+};
 use eyre::Context;
 use futures::TryStreamExt;
 use hyper::StatusCode;
 use tokio::sync::{watch, RwLock};
 use twitch_api2::{
     eventsub::{
-        stream::{StreamOfflineV1, StreamOnlineV1, StreamOfflineV1Payload, StreamOnlineV1Payload},
-        EventType, Status, self as twitch_eventsub, Event,
+        self as twitch_eventsub,
+        stream::{StreamOfflineV1, StreamOfflineV1Payload, StreamOnlineV1, StreamOnlineV1Payload},
+        Event, EventType, Status,
     },
     helix::{
         self,
@@ -18,7 +24,8 @@ use twitch_api2::{
         },
     },
     twitch_oauth2::{AppAccessToken, ClientId, ClientSecret, TwitchToken},
-    types::{self, UserIdRef}, HelixClient,
+    types::{self, UserIdRef, UserName, UserId},
+    HelixClient,
 };
 
 use crate::opts::Opts;
@@ -31,6 +38,12 @@ pub async fn eventsub_register(
     sign_secret: crate::SignSecret,
 ) -> eyre::Result<()> {
     tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
+
+    if std::env::var("DEV").is_ok() {
+        tracing::info!("In dev mode, not registering eventsubs");
+        return Ok(());
+    }
+
     // check every day
     let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(24 * 60 * 60));
 
@@ -124,6 +137,7 @@ pub async fn twitch_eventsub(
     Extension(opts): Extension<Arc<Opts>>,
     Extension(cache): Extension<Arc<retainer::Cache<http::HeaderValue, ()>>>,
     request: http::Request<axum::body::Body>,
+    broadcaster_id: UserId,
 ) -> impl IntoResponse {
     const MAX_ALLOWED_RESPONSE_SIZE: u64 = 64 * 1024;
 
@@ -187,9 +201,12 @@ pub async fn twitch_eventsub(
                     ..
                 }),
             ..
-        }) if broadcaster_user_id == opts.broadcaster_id => {
+        }) if broadcaster_user_id == broadcaster_id => {
             tracing::info!(broadcaster_id=?broadcaster_user_id, "sending live status to clients");
-            let _ = sender.send(LiveStatus::Live { started_at });
+            let _ = sender.send(LiveStatus::Live {
+                started_at,
+                url: stream_url_from_user(&opts.broadcaster_login),
+            });
         }
         Event::StreamOfflineV1(P {
             message:
@@ -198,9 +215,11 @@ pub async fn twitch_eventsub(
                     ..
                 }),
             ..
-        }) if broadcaster_user_id == opts.broadcaster_id => {
+        }) if broadcaster_user_id == broadcaster_id => {
             tracing::info!(broadcaster_id=?broadcaster_user_id, "sending offline status to clients");
-            let _ = sender.send(LiveStatus::Offline);
+            let _ = sender.send(LiveStatus::Offline {
+                url: stream_url_from_user(&opts.broadcaster_login),
+            });
         }
         Event::StreamOnlineV1(P {
             message: M::Notification(_),
@@ -259,15 +278,22 @@ pub async fn is_live(
     {
         Ok(LiveStatus::Live {
             started_at: stream.started_at.clone(),
+            url: stream_url_from_user(&stream.user_login),
         })
     } else {
-        let _channel = client
+        let channel = client
             .get_channel_from_id(channel, token)
             .await?
             .ok_or_else(|| eyre::eyre!("channel not found"))?;
 
-        Ok(LiveStatus::Offline)
+        Ok(LiveStatus::Offline {
+            url: stream_url_from_user(&channel.broadcaster_login),
+        })
     }
+}
+
+pub fn stream_url_from_user(user: &UserName) -> String {
+    format!("https://www.twitch.tv/{}", user)
 }
 
 pub async fn checker(
@@ -304,8 +330,13 @@ pub async fn checker(
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum LiveStatus {
-    Live { started_at: types::Timestamp },
-    Offline,
+    Live {
+        started_at: types::Timestamp,
+        url: String,
+    },
+    Offline {
+        url: String,
+    },
 }
 
 impl LiveStatus {
@@ -317,23 +348,32 @@ impl LiveStatus {
     /// Returns `true` if the live status is [`Offline`].
     ///
     /// [`Offline`]: LiveStatus::Offline
-    pub fn is_offline(&self) -> bool { matches!(self, Self::Offline) }
+    pub fn is_offline(&self) -> bool { matches!(self, Self::Offline { .. }) }
 
     pub fn to_message(&self) -> eyre::Result<ws::Message> {
         #[derive(serde::Serialize)]
         struct Msg {
             html: String,
+            live: bool,
         }
         let msg = match self {
             Self::Live { .. } => Msg {
                 html: "Yes".to_string(),
+                live: true,
             },
-            Self::Offline => Msg {
+            Self::Offline { .. } => Msg {
                 html: "No".to_string(),
+                live: false,
             },
         };
         Ok(ws::Message::Text(
             serde_json::to_string(&msg).wrap_err_with(|| "could not make into a message")?,
         ))
+    }
+
+    pub(crate) fn url(&self) -> String {
+        match self {
+            Self::Live { url, .. } | Self::Offline { url, .. } => url.clone(),
+        }
     }
 }

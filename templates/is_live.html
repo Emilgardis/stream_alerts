@@ -28,7 +28,9 @@
           if (data.type === "update") {
             window.location.reload();
           }
-          document.getElementById("is_live").innerHTML = data.html;
+          var status = document.getElementById("is_live");
+          status.innerHTML = data.html;
+          document.body.classList = [data.live ? "live" : "offline"]
         };
         ws.onopen = function () {
           clearInterval(timerId);
@@ -44,13 +46,13 @@
     </script>
     <!--Set document path to /-->
   </head>
-  <body>
+  <body class="{%if is_live -%} online {%else -%} offline {% endif -%}">
     <!--[if lt IE 7]>
       <p class="browsehappy">
         You are using an <strong>outdated</strong> browser. Please
         <a href="#">upgrade your browser</a> to improve your experience.
       </p>
     <![endif]-->
-    <a id="is_live" href="https://twitch.tv/sessis">{%if is_live -%} Yes {%else -%} No {% endif -%}</a>
+    <a id="is_live" href="{{ broadcaster_url }}">{%if is_live -%} Yes {%else -%} No {% endif -%}</a>
   </body>
 </html>

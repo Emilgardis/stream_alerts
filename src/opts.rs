@@ -10,7 +10,7 @@ pub struct Opts {
     #[clap(long, env, setting = ArgSettings::HideEnvValues)]
     pub sign_secret: SignSecret,
     #[clap(long, env, setting = ArgSettings::HideEnvValues, parse(from_str))]
-    pub broadcaster_id: twitch_api2::types::UserId,
+    pub broadcaster_login: twitch_api2::types::UserName,
     #[clap(long, env, setting = ArgSettings::HideEnvValues)]
     pub website_callback: String,
 }
