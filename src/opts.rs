@@ -15,7 +15,6 @@ pub struct Opts {
     pub website_callback: String,
 }
 
-
 #[derive(Clone)]
 pub struct SignSecret {
     secret: String,

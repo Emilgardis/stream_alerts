@@ -1,26 +1,35 @@
 :root {
   --offline-color: #5c5c5c;
   --online-color: pink;
-  --offline-text-color: rgb(26,17,56);
-  --online-text-color: rgb(26,17,56);
+  --offline-text-color: rgb(26, 17, 56);
+  --online-text-color: rgb(26, 17, 56);
 }
 
 @media screen and (prefers-color-scheme: light) {
   :root {
     --offline-color: white;
     --online-color: pink;
-    --offline-text-color: rgb(26,17,56);
-    --online-text-color: rgb(26,17,56);
+    --offline-text-color: rgb(26, 17, 56);
+    --online-text-color: rgb(26, 17, 56);
   }
 }
 
-
 @keyframes wiggle {
-  0% { transform: rotate(0deg); }
- 80% { transform: rotate(0deg); }
- 85% { transform: rotate(5deg); }
- 95% { transform: rotate(-5deg); }
-100% { transform: rotate(0deg); }
+  0% {
+    transform: rotate(0deg);
+  }
+  80% {
+    transform: rotate(0deg);
+  }
+  85% {
+    transform: rotate(5deg);
+  }
+  95% {
+    transform: rotate(-5deg);
+  }
+  100% {
+    transform: rotate(0deg);
+  }
 }
 
 a {
@@ -33,7 +42,6 @@ body.online > a {
   animation: wiggle 2.5s infinite;
 }
 
-
 a,
 a:visited,
 a:hover,
@@ -43,7 +51,6 @@ a:active {
 }
 
 body {
-  
   color: var(--offline-text-color);
   -webkit-transition: background-color 1000ms linear;
   -ms-transition: background-color 1000ms linear;
@@ -57,11 +64,9 @@ body {
 body.offline {
   background-color: var(--offline-color);
   color: var(--offline-text-color);
-
 }
 
 body.online {
   background-color: var(--online-color);
   color: var(--online-text-color);
 }
-

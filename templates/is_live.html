@@ -10,11 +10,14 @@
     <title>Is Sessis Live</title>
     <meta name="description" content="" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta property="og:type" content="website"/>
-    <meta property="og:title" content="Is Sessis Live"/>
-    <meta property="og:url" content="https://is.sessis.live/"/>
-    <meta property="og:image" content="https://static-cdn.jtvnw.net/jtv_user_pictures/22cc9b26-aea2-472a-b2f1-c01f30e05fae-profile_image-70x70.png" />
-    <meta property="og:description" content="?"/>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Is Sessis Live" />
+    <meta property="og:url" content="https://is.sessis.live/" />
+    <meta
+      property="og:image"
+      content="https://static-cdn.jtvnw.net/jtv_user_pictures/22cc9b26-aea2-472a-b2f1-c01f30e05fae-profile_image-70x70.png"
+    />
+    <meta property="og:description" content="?" />
     <link rel="stylesheet" href="/static/style.css" />
     <script>
       // add ws listener and on update change the page
@@ -30,7 +33,7 @@
           }
           var status = document.getElementById("is_live");
           status.innerHTML = data.html;
-          document.body.classList = [data.live ? "live" : "offline"]
+          document.body.classList = [data.live ? "live" : "offline"];
         };
         ws.onopen = function () {
           clearInterval(timerId);
@@ -42,7 +45,7 @@
           };
         };
       }
-      connect()
+      connect();
     </script>
     <!--Set document path to /-->
   </head>
@@ -53,6 +56,8 @@
         <a href="#">upgrade your browser</a> to improve your experience.
       </p>
     <![endif]-->
-    <a id="is_live" href="{{ broadcaster_url }}">{%if is_live -%} Yes {%else -%} No {% endif -%}</a>
+    <a id="is_live" href="{{ broadcaster_url }}"
+      >{%if is_live -%} Yes {%else -%} No {% endif -%}</a
+    >
   </body>
 </html>

@@ -24,7 +24,7 @@ use twitch_api2::{
         },
     },
     twitch_oauth2::{AppAccessToken, ClientId, ClientSecret, TwitchToken},
-    types::{self, UserIdRef, UserName, UserId},
+    types::{self, UserId, UserIdRef, UserName},
     HelixClient,
 };
 
@@ -292,9 +292,7 @@ pub async fn is_live(
     }
 }
 
-pub fn stream_url_from_user(user: &UserName) -> String {
-    format!("https://www.twitch.tv/{}", user)
-}
+pub fn stream_url_from_user(user: &UserName) -> String { format!("https://www.twitch.tv/{}", user) }
 
 pub async fn checker(
     sender: Arc<watch::Sender<LiveStatus>>,
