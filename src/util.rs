@@ -53,6 +53,7 @@ fn install_tracing() {
                 .add_directive("h2=error".parse().expect("could not make directive"))
                 .add_directive("rustls=error".parse().expect("could not make directive"))
                 .add_directive("tungstenite=error".parse().expect("could not make directive"))
+                .add_directive("retainer=info".parse().expect("could not make directive"))
             //.add_directive("tower_http=error".parse().unwrap())
         })
         .expect("could not make filter layer");

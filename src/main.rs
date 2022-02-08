@@ -116,6 +116,13 @@ pub async fn run(opts: &Opts) -> color_eyre::Result<()> {
         #[allow(unreachable_code)]
         Ok::<(), color_eyre::Report>(())
     };
+    let retainer = Arc::new(retainer::Cache::<axum::http::HeaderValue, ()>::new());
+    let ret = retainer.clone();
+    let retainer_cleanup = async move {
+        ret.monitor(10, 0.50, tokio::time::Duration::from_secs(86400 / 2))
+            .await;
+        Ok::<(), color_eyre::Report>(())
+    };
     let client_id = opts.client_id.clone();
     let client_secret = opts.client_secret.clone();
     let client3 = client.clone();
@@ -262,6 +269,7 @@ pub async fn run(opts: &Opts) -> color_eyre::Result<()> {
                 //.layer(HandleErrorLayer::new(handle_error))
                 .layer(AddExtensionLayer::new(client.clone()))
                 .layer(AddExtensionLayer::new(sender.clone()))
+                .layer(AddExtensionLayer::new(retainer.clone()))
                 .layer(AddExtensionLayer::new(Arc::new(opts.clone())))
                 .layer(TraceLayer::new_for_http().on_failure(
                     |error, _latency, _span: &tracing::Span| {
@@ -288,6 +296,7 @@ pub async fn run(opts: &Opts) -> color_eyre::Result<()> {
         flatten(tokio::spawn(checker)),
         flatten(tokio::spawn(refresher)),
         flatten(tokio::spawn(eventsub_register)),
+        flatten(tokio::spawn(retainer_cleanup)),
     );
     r?;
     Ok(())
@@ -422,6 +431,7 @@ impl LiveStatus {
 async fn twitch_eventsub(
     Extension(sender): Extension<Arc<watch::Sender<LiveStatus>>>,
     Extension(opts): Extension<Arc<Opts>>,
+    Extension(cache): Extension<Arc<retainer::Cache<axum::http::HeaderValue, ()>>>,
     request: axum::http::Request<axum::body::Body>,
 ) -> impl IntoResponse {
     const MAX_ALLOWED_RESPONSE_SIZE: u64 = 64 * 1024;
@@ -444,6 +454,16 @@ async fn twitch_eventsub(
     if !Event::verify_payload(&request, opts.sign_secret.secret()) {
         return (StatusCode::BAD_REQUEST, "Invalid signature".to_string());
     }
+
+    if let Some(id) = request.headers().get("Twitch-Eventsub-Message-Id") {
+        if cache.get(id).await.is_none() {
+            cache.insert(id.clone(), (), 400).await;
+        } else {
+            tracing::debug!("got already seen event");
+            return (StatusCode::OK, "".to_string());
+        }
+    }
+
     // Event is verified, now do stuff.
     let event = Event::parse_http(&request).unwrap();
     //let event = Event::parse(std::str::from_utf8(request.body()).unwrap()).unwrap();
