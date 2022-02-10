@@ -33,7 +33,7 @@
           }
           var status = document.getElementById("is_live");
           status.innerHTML = data.html;
-          document.body.classList = [data.live ? "live" : "offline"];
+          document.body.classList = [data.live ? "online" : "offline"];
         };
         ws.onopen = function () {
           clearInterval(timerId);
