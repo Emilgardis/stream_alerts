@@ -5,8 +5,8 @@ on:
     tags: ["v*"]
 env:
   REGISTRY: ghcr.io
-  IMAGE_NAME: is_sessis_live
-  IMAGE_NAME_FQ: ${{ github.repository_owner }}/is_sessis_live
+  IMAGE_NAME: alerts_sessis_live
+  IMAGE_NAME_FQ: ${{ github.repository_owner }}/alerts_sessis_live
 
 jobs:
   bake:

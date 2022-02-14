@@ -1,5 +1,5 @@
 [package]
-name = "is_sessis_live"
+name = "alerts_sessis_live"
 version = "0.1.0"
 edition = "2021"
 rust-version = "1.58"
@@ -18,9 +18,7 @@ tracing-error = "0.2.0"
 tracing-log = "0.1.2"
 tracing-subscriber = { version = "0.3.6", features = ["env-filter"] }
 axum = { version = "0.4.5", features = ["tower-log", "http2", "ws"] }
-twitch_api2 = { version = "0.6.0-rc.3", features = ["helix", "reqwest_client", "time", "eventsub", "hmac"] }
 futures = { version = "0.3" }
-reqwest = { version = "0.11", default-features = false, features = ["rustls-tls"] }
 askama = {version = "0.11", features = ["with-axum"] }
 askama_axum = {version = "0.1"}
 serde = { version = "1", features = ["derive"] }
@@ -30,6 +28,8 @@ tower = "0.4"
 tokio-tungstenite = "0.16.1"
 hyper = "0.14"
 retainer = "0.2"
+nanoid = "0.4.0"
+aliri_braid = "*"
 
 [build-dependencies]
 built = { version = "0.5.1", features = ["chrono", "git2"] }
@@ -39,6 +39,4 @@ built = { version = "0.5.1", features = ["chrono", "git2"] }
 opt-level = 3
 
 [patch.crates-io]
-twitch_api2 = { git = "https://github.com/Emilgardis/twitch_api2" }
 tower-http = {git = "https://github.com/tower-rs/tower-http.git", rev = "f26edbb"}
-#twitch_api2 = { path = "../twitch_api2" }

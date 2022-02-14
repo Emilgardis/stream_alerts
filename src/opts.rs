@@ -3,14 +3,8 @@ use clap::{ArgSettings, Parser};
 #[derive(Parser, Debug, Clone)]
 #[clap(about, version, long_version = &**crate::util::LONG_VERSION )]
 pub struct Opts {
-    #[clap(long, env, setting = ArgSettings::HideEnvValues, parse(from_str))]
-    pub client_id: twitch_api2::twitch_oauth2::ClientId,
-    #[clap(long, env, setting = ArgSettings::HideEnvValues, parse(from_str))]
-    pub client_secret: twitch_api2::twitch_oauth2::ClientSecret,
     #[clap(long, env, setting = ArgSettings::HideEnvValues)]
     pub sign_secret: SignSecret,
-    #[clap(long, env, setting = ArgSettings::HideEnvValues, parse(from_str))]
-    pub broadcaster_login: twitch_api2::types::UserName,
     #[clap(long, env, setting = ArgSettings::HideEnvValues)]
     pub website_callback: String,
 }

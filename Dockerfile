@@ -8,12 +8,12 @@ ARG RUSTFLAGS=-Ctarget-feature=-crt-static
 RUN --mount=type=cache,target=$CARGO_HOME/git \
     --mount=type=cache,target=$CARGO_HOME/registry \
     --mount=type=cache,sharing=private,target=/app/target \
-    cargo -V; cargo build --release --bin is_sessis_live && mv /app/target/release/is_sessis_live /app/is_sessis_live
+    cargo -V; cargo build --release --bin alerts_sessis_live && mv /app/target/release/alerts_sessis_live /app/alerts_sessis_live
 FROM alpine:3.15 as runtime
 WORKDIR /app
 ARG RUN_DEPS
 RUN apk add --no-cache \
         ${RUN_DEPS}
-COPY --from=builder /app/is_sessis_live /app/is_sessis_live
+COPY --from=builder /app/alerts_sessis_live /app/alerts_sessis_live
 COPY ./static ./static
-ENTRYPOINT "/app/is_sessis_live"
+ENTRYPOINT "/app/alerts_sessis_live"
