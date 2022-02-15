@@ -1,4 +1,5 @@
 #![warn(clippy::unwrap_in_result)]
+#![warn(clippy::todo)]
 pub mod alerts;
 pub mod opts;
 pub mod util;
@@ -6,12 +7,13 @@ pub mod util;
 pub use alerts::AlertMessage;
 use hyper::StatusCode;
 pub use opts::SignSecret;
-use std::{error::Error, sync::Arc};
+use serde::Deserialize;
+use std::{collections::HashMap, error::Error, sync::Arc};
 
 use axum::{
     extract::{
         ws::{Message, WebSocket},
-        Path, WebSocketUpgrade,
+        Extension, Form, Path, Query, WebSocketUpgrade,
     },
     response::IntoResponse,
     routing::{get, get_service, post},
@@ -28,10 +30,13 @@ use opts::Opts;
 use clap::Parser;
 use eyre::Context;
 
-use tokio::{sync::broadcast, task::JoinHandle};
+use tokio::{
+    sync::{broadcast, RwLock},
+    task::JoinHandle,
+};
 use tower_http::{catch_panic::CatchPanicLayer, services::ServeDir, trace::TraceLayer};
 
-use self::alerts::AlertId;
+use self::alerts::{Alert, AlertId};
 
 #[tokio::main]
 async fn main() -> Result<(), eyre::Report> {
@@ -61,7 +66,11 @@ pub async fn run(opts: &Opts) -> eyre::Result<()> {
             .await;
         Ok::<(), eyre::Report>(())
     };
-
+    let mut map = Arc::new(RwLock::new(HashMap::<AlertId, Alert>::new()));
+    map.write().await.insert(
+        AlertId::new("Cf8GfmlGGEK_-XJ_k57hO"),
+        Alert::new("hello".to_string(), "HAHAH".to_string()),
+    );
     let app = Router::new()
         .route(
             "/ws/:id",
@@ -70,7 +79,16 @@ pub async fn run(opts: &Opts) -> eyre::Result<()> {
                 move |ws, id| handler(ws, sender, id)
             }),
         )
+        .route("/alert/new", get(new_alert))
+        .route("/alert/new", post(new_alert_post))
         .route("/alert/:id", get(serve_alert))
+        .route(
+            "/alert/:id/update",
+            get({
+                let sender = sender.clone();
+                move |id, map, query| update_alert(sender, id, map, query)
+            }),
+        )
         .nest(
             "/static",
             get_service(ServeDir::new("./static/")).handle_error(|error| async move {
@@ -86,6 +104,7 @@ pub async fn run(opts: &Opts) -> eyre::Result<()> {
                 //.layer(axum::error_handling::HandleErrorLayer::new(handle_error))
                 .layer(AddExtensionLayer::new(Arc::new(sender.clone())))
                 .layer(AddExtensionLayer::new(retainer.clone()))
+                .layer(AddExtensionLayer::new(map.clone()))
                 .layer(AddExtensionLayer::new(Arc::new(opts.clone())))
                 .layer(TraceLayer::new_for_http().on_failure(
                     |error, _latency, _span: &tracing::Span| {
@@ -131,15 +150,107 @@ async fn handle_error(err: axum::BoxError) -> impl IntoResponse {
 #[derive(Template)]
 #[template(path = "alert.html")]
 struct AlertSite {
+    alert_id: AlertId,
     alert_name: String,
+    last_text: String,
+}
+
+#[derive(Template)]
+#[template(path = "update_alert.html")]
+struct UpdateAlert {
+    alert_name: String,
+    last_text: String,
+}
+
+#[derive(Template)]
+#[template(path = "new_alert.html")]
+struct NewAlert {}
+
+#[derive(Template)]
+#[template(path = "404.html")]
+struct NotFound {
+    id: String,
+}
+
+impl NotFound {
+    fn new(id: String) -> Self { Self { id } }
 }
 
 impl AlertSite {
-    pub fn new(alert_id: AlertId) -> Self { todo!() }
+    pub fn new(alert_id: AlertId, alert_name: String, last_text: String) -> Self {
+        Self {
+            alert_id,
+            alert_name,
+            last_text,
+        }
+    }
 }
 
-async fn serve_alert(Path(alert_id): Path<AlertId>) -> impl IntoResponse {
-    AlertSite::new(alert_id)
+async fn serve_alert(
+    Path(alert_id): Path<AlertId>,
+    Extension(map): Extension<Arc<RwLock<HashMap<AlertId, Alert>>>>,
+) -> axum::response::Response {
+    let alert: Alert = {
+        let map_r = map.read().await;
+        if let Some(alert) = map_r.get(&alert_id) {
+            alert.clone()
+        } else {
+            return NotFound::new(alert_id.to_string()).into_response();
+        }
+    };
+    AlertSite::new(alert_id, alert.name.clone(), alert.last_text.clone()).into_response()
+}
+
+#[derive(serde::Deserialize)]
+pub struct UpdateAlertQuery {
+    text: Option<String>,
+}
+
+/// Update an existing alert and send the update to clients
+async fn update_alert(
+    sender: broadcast::Sender<AlertMessage>,
+    Path(alert_id): Path<AlertId>,
+    Extension(map): Extension<Arc<RwLock<HashMap<AlertId, Alert>>>>,
+    update: Query<UpdateAlertQuery>,
+) -> impl IntoResponse {
+    if let Some(text) = &update.text {
+        let mut map_w = map.write().await;
+        if let Some(alert) = map_w.get_mut(&alert_id) {
+            alert.last_text = text.clone();
+        }
+        sender
+            .send(AlertMessage::new_message(alert_id.clone(), text.clone()))
+            .unwrap();
+    }
+
+    let map_r = map.read().await;
+    let alert = map_r.get(&alert_id).expect("no alert found");
+
+    UpdateAlert {
+        alert_name: alert.name.clone(),
+        last_text: alert.last_text.clone(),
+    }
+}
+
+async fn new_alert() -> axum::response::Response { NewAlert {}.into_response() }
+
+#[derive(serde::Deserialize, Debug)]
+pub struct NewAlertPostForm {
+    alert_name: String,
+    alert_text: String,
+}
+async fn new_alert_post(
+    Extension(map): Extension<Arc<RwLock<HashMap<AlertId, Alert>>>>,
+    form: Form<NewAlertPostForm>,
+) -> impl IntoResponse {
+    let mut map = map.write().await;
+    let alert_id: AlertId = nanoid::nanoid!().into();
+    map.insert(
+        alert_id.clone(),
+        Alert::new(form.alert_name.clone(), form.alert_text.clone()),
+    );
+
+    AlertSite::new(alert_id, form.alert_name.clone(), form.alert_text.clone())
 }
 
 async fn handler(
@@ -182,7 +293,7 @@ async fn write(
     loop {
         let msg = watch.recv().await?;
         // Check if alert id matches
-        if msg.alert_id != alert_id {
+        if msg.alert_id() != alert_id {
             continue;
         }
         if let Ok(msg) = msg.to_message() {

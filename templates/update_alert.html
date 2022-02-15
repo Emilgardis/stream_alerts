@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<!--[if lt IE 7]>      <html class="no-js lt-ie9 lt-ie8 lt-ie7"> <![endif]-->
+<!--[if IE 7]>         <html class="no-js lt-ie9 lt-ie8"> <![endif]-->
+<!--[if IE 8]>         <html class="no-js lt-ie9"> <![endif]-->
+<!--[if gt IE 8]>      <html class="no-js"> <!--<![endif]-->
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <title>Create Alert</title>
+    <meta name="description" content="" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="stylesheet" href="/static/style.css" />
+    <meta property="og:type" content="website" />
+    <script>
+      update_text = function () {
+        var text = document.getElementById("alert_text").value;
+        var queryParams = new URLSearchParams(window.location.search);
+        queryParams.set("text", text);
+        history.replaceState(null, null, "?" + queryParams.toString());
+        window.location.reload();
+      };
+    </script>
+  </head>
+  <body>
+    <label for="alert_text">Update text</label>
+    <form>
+      <input
+        id="alert_text"
+        type="text"
+        name="alert_text"
+        placeholder="Inital Alert Text"
+        value="{{last_text}}"
+      />
+      <input
+        id="submit"
+        type="submit"
+        value="Create Alert"
+        onclick="update_text()"
+      />
+    </form>
+  </body>
+</html>

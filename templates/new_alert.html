@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<!--[if lt IE 7]>      <html class="no-js lt-ie9 lt-ie8 lt-ie7"> <![endif]-->
+<!--[if IE 7]>         <html class="no-js lt-ie9 lt-ie8"> <![endif]-->
+<!--[if IE 8]>         <html class="no-js lt-ie9"> <![endif]-->
+<!--[if gt IE 8]>      <html class="no-js"> <!--<![endif]-->
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <title>Create Alert</title>
+    <meta name="description" content="" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="stylesheet" href="/static/style.css" />
+    <meta property="og:type" content="website" />
+  </head>
+  <body>
+    <!--Render the text-->
+    <form action="/alert/new" method="POST">
+      <label for="alert_name">Name</label>
+      <input type="text" name="alert_name" placeholder="Alert Name" />
+      <label for="alert_text">Inital Alert Text</label>
+      <input type="text" name="alert_text" placeholder="Inital Alert Text"/>
+      <input type="submit" value="Create Alert"/>
+    </form>
+  </body>
+</html>

@@ -34,7 +34,6 @@
 
 a {
   text-decoration: none;
-  font-size: 10vw;
 }
 
 body.online > a {
@@ -51,7 +50,7 @@ a:active {
 }
 
 body {
-  color: var(--offline-text-color);
+  color: black;
   -webkit-transition: background-color 1000ms linear;
   -ms-transition: background-color 1000ms linear;
   transition: background-color 1000ms linear;
@@ -59,6 +58,10 @@ body {
   top: 50%;
   left: 50%;
   transform: translate(-50%, -50%);
+}
+
+#text {
+  font-size: 1000%;
 }
 
 body.offline {
