@@ -13,29 +13,37 @@
     <link rel="stylesheet" href="/static/style.css" />
     <meta property="og:type" content="website" />
     <script>
-      window.onload = function() {
-        if ("{{alert_id}}".indexOf("{") === null) {
-          history.replaceState(null, null, "/alert/{{alert_id}}");
-        }
-      }
+      window.onload = function () {
+        history.replaceState(null, null, "/alert/{{alert_id}}");
+        
+      };
       // add ws listener and on update change the page
       const protocol =
         window.location.protocol === "http:" ? "ws://" : "wss://";
       var timerId;
       function connect() {
-        var ws = new WebSocket(protocol + window.location.host + "/ws/{{alert_id}}");
+        var ws = new WebSocket(
+          protocol + window.location.host + "/ws/{{alert_id}}"
+        );
         ws.onmessage = function (event) {
           var data = JSON.parse(event.data);
           if (data.type === "update") {
             window.location.reload();
           }
-          console.log("got message", data)
-          document.getElementById("text").innerHTML = data.text;
-          // Do stuff!
+          if (data.type === "message") {
+            console.log("got message", data);
+            document.getElementById("text").innerHTML = data.text;
+          }
         };
         ws.onopen = function () {
           clearInterval(timerId);
 
+          ws.send(
+            JSON.stringify({
+              type: "init",
+              alert_id: "{{alert_id}}",
+            })
+          );
           ws.onclose = function () {
             timerId = setInterval(() => {
               connect();
@@ -48,6 +56,9 @@
   </head>
   <body>
     <!--Render the text-->
+<div>
     <div id="text">{{last_text}}</div>
+  </svg>
+</div>
   </body>
 </html>

@@ -6,8 +6,6 @@ pub mod util;
 
 pub use alerts::AlertMessage;
 use hyper::StatusCode;
-pub use opts::SignSecret;
-use serde::Deserialize;
 use std::{collections::HashMap, error::Error, sync::Arc};
 
 use axum::{
@@ -36,7 +34,7 @@ use tokio::{
 };
 use tower_http::{catch_panic::CatchPanicLayer, services::ServeDir, trace::TraceLayer};
 
-use self::alerts::{Alert, AlertId};
+use self::alerts::{Alert, AlertId, AlertText, AlertName};
 
 #[tokio::main]
 async fn main() -> Result<(), eyre::Report> {
@@ -58,7 +56,7 @@ async fn main() -> Result<(), eyre::Report> {
 }
 
 pub async fn run(opts: &Opts) -> eyre::Result<()> {
-    let (sender, recv) = broadcast::channel(16);
+    let (sender, _) = broadcast::channel(16);
     let retainer = Arc::new(retainer::Cache::<axum::http::HeaderValue, ()>::new());
     let ret = retainer.clone();
     let retainer_cleanup = async move {
@@ -66,17 +64,14 @@ pub async fn run(opts: &Opts) -> eyre::Result<()> {
             .await;
         Ok::<(), eyre::Report>(())
     };
-    let mut map = Arc::new(RwLock::new(HashMap::<AlertId, Alert>::new()));
-    map.write().await.insert(
-        AlertId::new("Cf8GfmlGGEK_-XJ_k57hO"),
-        Alert::new("hello".to_string(), "HAHAH".to_string()),
-    );
+    let map = Arc::new(RwLock::new(HashMap::<AlertId, Alert>::new()));
+    read_alerts(&map, opts.db_path.clone()).await?;
     let app = Router::new()
         .route(
             "/ws/:id",
             get({
                 let sender = sender.clone();
-                move |ws, id| handler(ws, sender, id)
+                move |ws, id, map| handler(ws, sender, id, map)
             }),
         )
         .route("/alert/new", get(new_alert))
@@ -86,7 +81,7 @@ pub async fn run(opts: &Opts) -> eyre::Result<()> {
             "/alert/:id/update",
             get({
                 let sender = sender.clone();
-                move |id, map, query| update_alert(sender, id, map, query)
+                move |id, map, opts, query| update_alert(sender, id, map, opts, query)
             }),
         )
         .nest(
@@ -131,6 +126,23 @@ pub async fn run(opts: &Opts) -> eyre::Result<()> {
     Ok(())
 }
 
+async fn read_alerts(
+    map: &RwLock<HashMap<AlertId, Alert>>,
+    db_path: std::path::PathBuf,
+) -> Result<(), eyre::Report> {
+    let mut i = tokio::fs::read_dir(db_path).await?;
+    let mut map = map.write().await;
+    while let Some(entry) = i.next_entry().await? {
+        if entry.file_type().await?.is_file() {
+            let path = entry.path();
+            let alert = Alert::load_alert(path).await?;
+
+            map.insert(alert.alert_id.clone(), alert);
+        }
+    }
+    Ok(())
+}
+
 async fn flatten<T>(handle: JoinHandle<Result<T, eyre::Report>>) -> Result<T, eyre::Report> {
     match handle.await {
         Ok(Ok(result)) => Ok(result),
@@ -151,15 +163,15 @@ async fn handle_error(err: axum::BoxError) -> impl IntoResponse {
 #[template(path = "alert.html")]
 struct AlertSite {
     alert_id: AlertId,
-    alert_name: String,
-    last_text: String,
+    alert_name: AlertName,
+    last_text: AlertText,
 }
 
 #[derive(Template)]
 #[template(path = "update_alert.html")]
 struct UpdateAlert {
-    alert_name: String,
-    last_text: String,
+    alert_name: AlertName,
+    last_text: AlertText,
 }
 
 #[derive(Template)]
@@ -177,7 +189,7 @@ impl NotFound {
 }
 
 impl AlertSite {
-    pub fn new(alert_id: AlertId, alert_name: String, last_text: String) -> Self {
+    pub fn new(alert_id: AlertId, alert_name: AlertName, last_text: AlertText) -> Self {
         Self {
             alert_id,
             alert_name,
@@ -203,7 +215,8 @@ async fn serve_alert(
 
 #[derive(serde::Deserialize)]
 pub struct UpdateAlertQuery {
-    text: Option<String>,
+    alert_text: Option<AlertText>,
+    api: Option<String>,
 }
 
 /// Update an existing alert and send the update to clients
@@ -211,16 +224,23 @@ async fn update_alert(
     sender: broadcast::Sender<AlertMessage>,
     Path(alert_id): Path<AlertId>,
     Extension(map): Extension<Arc<RwLock<HashMap<AlertId, Alert>>>>,
+    Extension(opts): Extension<Arc<Opts>>,
     update: Query<UpdateAlertQuery>,
-) -> impl IntoResponse {
-    if let Some(text) = &update.text {
+) -> axum::response::Response {
+    if let Some(text) = &update.alert_text {
         let mut map_w = map.write().await;
         if let Some(alert) = map_w.get_mut(&alert_id) {
             alert.last_text = text.clone();
+            alert.save_alert(&opts.db_path).await.expect("oops")
         }
         sender
             .send(AlertMessage::new_message(alert_id.clone(), text.clone()))
             .unwrap();
+        tracing::info!("updated alert.");
+    }
+
+    if update.api.is_some() {
+        return (StatusCode::OK, "ok!").into_response();
     }
 
     let map_r = map.read().await;
@@ -230,56 +250,91 @@ async fn update_alert(
         alert_name: alert.name.clone(),
         last_text: alert.last_text.clone(),
     }
+    .into_response()
 }
 
 async fn new_alert() -> axum::response::Response { NewAlert {}.into_response() }
 
 #[derive(serde::Deserialize, Debug)]
 pub struct NewAlertPostForm {
-    alert_name: String,
-    alert_text: String,
+    alert_name: AlertName,
+    alert_text: AlertText,
 }
 async fn new_alert_post(
     Extension(map): Extension<Arc<RwLock<HashMap<AlertId, Alert>>>>,
+    Extension(opts): Extension<Arc<Opts>>,
     form: Form<NewAlertPostForm>,
 ) -> impl IntoResponse {
     let mut map = map.write().await;
     let alert_id: AlertId = nanoid::nanoid!().into();
-    map.insert(
+    let alert = Alert::new(
         alert_id.clone(),
-        Alert::new(form.alert_name.clone(), form.alert_text.clone()),
+        form.alert_text.clone(),
+        form.alert_name.clone(),
     );
+    alert
+        .save_alert(&opts.db_path)
+        .await
+        .expect("could not save file");
+    map.insert(alert_id.clone(), alert);
 
     AlertSite::new(alert_id, form.alert_name.clone(), form.alert_text.clone())
 }
 
 async fn handler(
     ws: WebSocketUpgrade,
-    watch: broadcast::Sender<AlertMessage>,
+    broadcast: broadcast::Sender<AlertMessage>,
     Path(alert_id): Path<AlertId>,
+    Extension(map): Extension<Arc<RwLock<HashMap<AlertId, Alert>>>>,
 ) -> impl IntoResponse {
-    let recv = watch.subscribe();
-    ws.on_upgrade(|f| handle_socket(f, recv, alert_id))
+    tracing::debug!("got call into handler");
+    ws.on_upgrade(|f| handle_socket(f, broadcast, alert_id, map))
 }
 
 async fn handle_socket(
     socket: WebSocket,
-    watch: broadcast::Receiver<AlertMessage>,
+    broadcast: broadcast::Sender<AlertMessage>,
     alert_id: AlertId,
+    map: Arc<RwLock<HashMap<AlertId, Alert>>>,
 ) -> Result<(), eyre::Report> {
     let (sender, receiver) = socket.split();
 
-    tokio::try_join!(
-        flatten(tokio::spawn(write(sender, watch, alert_id))),
-        flatten(tokio::spawn(read(receiver)))
+    tokio::select!(
+        r = tokio::spawn(write(
+            sender,
+            broadcast.subscribe(),
+            alert_id.clone()
+        )) => {
+            r
+        }
+        r = tokio::spawn(read(receiver, broadcast, map, alert_id)) => {
+            r
+        }
     )
     .wrap_err_with(|| "in stream join")
     .map(|_| ())
 }
 // Reads, basically only responds to pongs. Should not be a need for refreshes, but maybe.
-async fn read(mut receiver: SplitStream<WebSocket>) -> Result<(), eyre::Report> {
+async fn read(
+    mut receiver: SplitStream<WebSocket>,
+    broadcast: broadcast::Sender<AlertMessage>,
+    map: Arc<RwLock<HashMap<AlertId, Alert>>>,
+    alert_id: AlertId,
+) -> Result<(), eyre::Report> {
     while let Some(msg) = receiver.next().await {
-        tracing::debug!(message = ?msg, "got message")
+        let msg = msg?;
+        if matches!(msg, Message::Text(..)) {
+            let map = map.read().await;
+            if let Some(alert) = map.get(&alert_id) {
+                // TODO: This blasts out to all clients, maybe should nerf it.
+                // broadcast
+                //     .send(AlertMessage::new_message(
+                //         alert_id.clone(),
+                //         alert.last_text.clone(),
+                //     ))
+                //     .wrap_err("could not send message")?;
+            }
+        }
     }
     Ok(())
 }
@@ -287,22 +342,23 @@ async fn read(mut receiver: SplitStream<WebSocket>) -> Result<(), eyre::Report> 
 /// Watch for events and send to clients.
 async fn write(
     mut sender: SplitSink<WebSocket, Message>,
-    mut watch: broadcast::Receiver<AlertMessage>,
+    mut broadcast: broadcast::Receiver<AlertMessage>,
     alert_id: AlertId,
 ) -> Result<(), eyre::Report> {
     loop {
-        let msg = watch.recv().await?;
+        let msg = broadcast.recv().await?;
         // Check if alert id matches
         if msg.alert_id() != alert_id {
             continue;
         }
         if let Ok(msg) = msg.to_message() {
+            tracing::debug!("sending message to client");
             if let Err(error) = sender.send(msg).await {
                 if let Some(e) = error.source() {
                     if let Some(tokio_tungstenite::tungstenite::error::Error::ConnectionClosed) =
                         e.downcast_ref()
                     {
-                        // NOOP
+                        return Ok(());
                     } else {
                         Err(error).wrap_err_with(|| "sending message to ws client failed")?
                     }
@@ -310,5 +366,4 @@ async fn write(
             };
         }
     }
-    Ok(())
 }

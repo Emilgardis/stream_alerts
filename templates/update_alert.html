@@ -13,16 +13,17 @@
     <link rel="stylesheet" href="/static/style.css" />
     <meta property="og:type" content="website" />
     <script>
+      history.replaceState(null, null, "?");
       update_text = function () {
         var text = document.getElementById("alert_text").value;
         var queryParams = new URLSearchParams(window.location.search);
-        queryParams.set("text", text);
+        queryParams.set("alert_text", text);
         history.replaceState(null, null, "?" + queryParams.toString());
         window.location.reload();
       };
     </script>
   </head>
-  <body>
+  <body class="center">
     <label for="alert_text">Update text</label>
     <form>
       <input

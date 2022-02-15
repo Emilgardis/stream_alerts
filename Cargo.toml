@@ -30,6 +30,7 @@ hyper = "0.14"
 retainer = "0.2"
 nanoid = "0.4.0"
 aliri_braid = "*"
+jfs = "0.7.0"
 
 [build-dependencies]
 built = { version = "0.5.1", features = ["chrono", "git2"] }
