@@ -30,8 +30,8 @@
           if (data.type === "update") {
             window.location.reload();
           }
-          if (data.type === "message") {
-            console.log("got message", data);
+          if (data.type === "message_markdown") {
+            console.log("got message as markdown", data);
             document.getElementById("text").innerHTML = data.text;
           }
         };
@@ -57,7 +57,7 @@
   <body>
     <!--Render the text-->
 <div>
-    <div id="text">{{last_text}}</div>
+    <div id="text" class="alert-text">{{last_text.to_markdown()}}</div>
   </svg>
 </div>
   </body>

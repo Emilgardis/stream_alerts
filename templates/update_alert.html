@@ -7,7 +7,7 @@
   <head>
     <meta charset="utf-8" />
     <meta http-equiv="X-UA-Compatible" content="IE=edge" />
-    <title>Create Alert</title>
+    <title>Update Alert: {{alert_name}}</title>
     <meta name="description" content="" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <link rel="stylesheet" href="/static/style.css?_c={{cache_bust}}" />
@@ -24,12 +24,16 @@
     </script>
   </head>
   <body class="center">
-    <label for="alert_text">Update text for {{alert_name}}</label>
+    <h1>Update alert: {{alert_name}}</h1>
+    <p>Link: <a href="/alerts/{{alert_id}}">{{alert_id}}</a></p>
+
     <form>
       <div class="input-group">
+        <label for="alert_text">Update text</label>
       <textarea
         id="alert_text"
         name="alert_text"
+        class="alert-text alert-text-editor"
         placeholder="Inital Alert Text"
       >{{last_text}}</textarea>
       <input

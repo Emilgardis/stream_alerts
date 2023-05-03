@@ -3,13 +3,25 @@ body {
   margin: 0;
 }
 
-#text {
+.alert-text {
   font-family: Arial;
   font-size: xx-large;
   overflow: hidden;
   overflow-wrap: break-word;
   margin: 0;
   padding: 0;
+  color: white;
+  font-family: monospace;
+  white-space: pre;
+}
+
+.alert-text > p {
+  margin: 0;
+  padding: 0;
+}
+
+.alert-text-editor {
+  color: black;
 }
 
 .center {
@@ -17,6 +29,11 @@ body {
   top: 50%;
   left: 50%;
   transform: translate(-50%, -50%);
+}
+
+textarea {
+  height: 300px;
+  width: 600px;
 }
 
 .input-group {

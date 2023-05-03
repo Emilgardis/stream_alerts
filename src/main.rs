@@ -5,6 +5,7 @@ mod ip;
 pub mod opts;
 pub mod util;
 
+use alerts::AlertMarkdown;
 pub use alerts::AlertMessage;
 use hyper::StatusCode;
 use rand::Rng;
@@ -40,7 +41,7 @@ use tower_http::{
     trace::{DefaultMakeSpan, MakeSpan, TraceLayer},
 };
 
-use self::alerts::{Alert, AlertId, AlertName, AlertText};
+use self::alerts::{Alert, AlertId, AlertName};
 
 #[tokio::main]
 async fn main() -> Result<(), eyre::Report> {
@@ -195,11 +196,11 @@ async fn flatten<T>(handle: JoinHandle<Result<T, eyre::Report>>) -> Result<T, ey
 }
 
 #[derive(Template)]
-#[template(path = "alert.html")]
+#[template(path = "alert.html", escape = "none")]
 struct AlertSite {
     alert_id: AlertId,
     alert_name: AlertName,
-    last_text: AlertText,
+    last_text: AlertMarkdown,
     cache_bust: String,
 }
 
@@ -207,7 +208,8 @@ struct AlertSite {
 #[template(path = "update_alert.html")]
 struct UpdateAlert {
     alert_name: AlertName,
-    last_text: AlertText,
+    alert_id: AlertId,
+    last_text: AlertMarkdown,
     cache_bust: String,
 }
 
@@ -230,7 +232,7 @@ impl NotFound {
 }
 
 impl AlertSite {
-    pub fn new(alert_id: AlertId, alert_name: AlertName, last_text: AlertText) -> Self {
+    pub fn new(alert_id: AlertId, alert_name: AlertName, last_text: AlertMarkdown) -> Self {
         Self {
             alert_id,
             alert_name,
@@ -261,7 +263,7 @@ async fn serve_alert(
 
 #[derive(serde::Deserialize)]
 pub struct UpdateAlertQuery {
-    alert_text: Option<AlertText>,
+    alert_text: Option<AlertMarkdown>,
     api: Option<String>,
 }
 
@@ -292,6 +294,7 @@ async fn update_alert(
 
     UpdateAlert {
         alert_name: alert.name.clone(),
+        alert_id,
         last_text: alert.last_text.clone(),
         cache_bust: rand::thread_rng()
             .sample_iter(&rand::distributions::Alphanumeric)
@@ -316,7 +319,7 @@ async fn new_alert() -> axum::response::Response {
 #[derive(serde::Deserialize, Debug)]
 pub struct NewAlertPostForm {
     alert_name: AlertName,
-    alert_text: AlertText,
+    alert_text: AlertMarkdown,
 }
 async fn new_alert_post(
     Extension(map): Extension<Arc<RwLock<HashMap<AlertId, Alert>>>>,
