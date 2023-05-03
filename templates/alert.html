@@ -10,12 +10,12 @@
     <title>Alert View - {{alert_name}}</title>
     <meta name="description" content="" />
     <meta name="viewport" content="width=800,height=600, initial-scale=1" />
-    <link rel="stylesheet" href="/static/style.css" />
+    <link rel="stylesheet" href="/static/style.css?_c={{cache_bust}}" />
     <meta property="og:type" content="website" />
     <script>
       window.onload = function () {
         history.replaceState(null, null, "/alert/{{alert_id}}");
-        
+
       };
       // add ws listener and on update change the page
       const protocol =

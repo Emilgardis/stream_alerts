@@ -10,7 +10,7 @@
     <title>Create Alert</title>
     <meta name="description" content="" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <link rel="stylesheet" href="/static/style.css" />
+    <link rel="stylesheet" href="/static/style.css?_c={{cache_bust}}" />
     <meta property="og:type" content="website" />
     <script>
       history.replaceState(null, null, "?");
@@ -24,21 +24,21 @@
     </script>
   </head>
   <body class="center">
-    <label for="alert_text">Update text</label>
+    <label for="alert_text">Update text for {{alert_name}}</label>
     <form>
-      <input
+      <div class="input-group">
+      <textarea
         id="alert_text"
-        type="text"
         name="alert_text"
         placeholder="Inital Alert Text"
-        value="{{last_text}}"
-      />
+      >{{last_text}}</textarea>
       <input
         id="submit"
         type="submit"
-        value="Create Alert"
+        value="Update Alert"
         onclick="update_text()"
       />
+      </div>
     </form>
   </body>
 </html>

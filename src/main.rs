@@ -1,11 +1,13 @@
 #![warn(clippy::unwrap_in_result)]
 #![warn(clippy::todo)]
 pub mod alerts;
+mod ip;
 pub mod opts;
 pub mod util;
 
 pub use alerts::AlertMessage;
 use hyper::StatusCode;
+use rand::Rng;
 use std::{collections::HashMap, error::Error, sync::Arc};
 
 use axum::{
@@ -15,7 +17,7 @@ use axum::{
     },
     response::IntoResponse,
     routing::{get, get_service, post},
-    AddExtensionLayer, Router,
+    Router,
 };
 
 use askama::Template;
@@ -32,18 +34,22 @@ use tokio::{
     sync::{broadcast, RwLock},
     task::JoinHandle,
 };
-use tower_http::{catch_panic::CatchPanicLayer, services::ServeDir, trace::TraceLayer};
+use tower_http::{
+    catch_panic::CatchPanicLayer,
+    services::ServeDir,
+    trace::{DefaultMakeSpan, MakeSpan, TraceLayer},
+};
 
-use self::alerts::{Alert, AlertId, AlertText, AlertName};
+use self::alerts::{Alert, AlertId, AlertName, AlertText};
 
 #[tokio::main]
 async fn main() -> Result<(), eyre::Report> {
-    let _ = util::install_utils()?;
+    util::install_utils()?;
     let opts = Opts::parse();
 
     tracing::debug!(
         "App started!\n{}",
-        Opts::try_parse_from(&["app", "--version"])
+        Opts::try_parse_from(["app", "--version"])
             .unwrap_err()
             .to_string()
     );
@@ -84,7 +90,7 @@ pub async fn run(opts: &Opts) -> eyre::Result<()> {
                 move |id, map, opts, query| update_alert(sender, id, map, opts, query)
             }),
         )
-        .nest(
+        .nest_service(
             "/static",
             get_service(ServeDir::new("./static/")).handle_error(|error| async move {
                 tracing::error!("{}", error);
@@ -97,30 +103,67 @@ pub async fn run(opts: &Opts) -> eyre::Result<()> {
         .layer(
             tower::ServiceBuilder::new()
                 //.layer(axum::error_handling::HandleErrorLayer::new(handle_error))
-                .layer(AddExtensionLayer::new(Arc::new(sender.clone())))
-                .layer(AddExtensionLayer::new(retainer.clone()))
-                .layer(AddExtensionLayer::new(map.clone()))
-                .layer(AddExtensionLayer::new(Arc::new(opts.clone())))
-                .layer(TraceLayer::new_for_http().on_failure(
-                    |error, _latency, _span: &tracing::Span| {
-                        tracing::error!(error=%error);
-                    },
-                ))
+                .layer(Extension(Arc::new(sender.clone())))
+                .layer(Extension(retainer.clone()))
+                .layer(Extension(map.clone()))
+                .layer(Extension(Arc::new(opts.clone())))
+                .layer(
+                    TraceLayer::new_for_http()
+                        .on_failure(|error, _latency, _span: &tracing::Span| {
+                            tracing::error!(error=%error);
+                        })
+                        .make_span_with(|request: &axum::http::Request<axum::body::Body>| {
+                            DefaultMakeSpan::new()
+                                .include_headers(true)
+                                .make_span(request)
+                                .in_scope(|| {
+                                    tracing::info_span!(
+                                        "http-request",
+                                        status_code = tracing::field::Empty,
+                                        uri = tracing::field::display(request.uri()),
+                                        method = tracing::field::display(request.method()),
+                                        ip = tracing::field::Empty,
+                                    )
+                                })
+                        })
+                        .on_response(
+                            |response: &axum::http::Response<_>,
+                             _latency: std::time::Duration,
+                             span: &tracing::Span| {
+                                span.record(
+                                    "status_code",
+                                    &tracing::field::display(response.status()),
+                                );
+
+                                tracing::info!("response generated");
+                            },
+                        )
+                        .on_request(
+                            |request: &axum::http::Request<axum::body::Body>,
+                             span: &tracing::Span| {
+                                if let Some(ip) =
+                                    ip::real_ip(request.headers(), request.extensions())
+                                {
+                                    span.record("ip", tracing::field::display(ip));
+                                } else {
+                                    span.record("ip", "<unknown>");
+                                }
+                                tracing::debug!("request received");
+                            },
+                        ),
+                )
                 .layer(CatchPanicLayer::new()),
         );
 
+    let address = (opts.interface, opts.port).into();
     let server = tokio::spawn(async move {
-        axum::Server::bind(
-            &"0.0.0.0:80"
-                .parse()
-                .wrap_err_with(|| "when parsing address")?,
-        )
-        .serve(app.into_make_service())
-        .await
-        .wrap_err_with(|| "when serving")?;
+        axum::Server::bind(&address)
+            .serve(app.into_make_service_with_connect_info::<std::net::SocketAddr>())
+            .await
+            .wrap_err_with(|| "when serving")?;
         Ok::<(), eyre::Report>(())
     });
-    tracing::info!("spinning up server!");
+    tracing::info!("spinning up server! http://{}", address);
     let r = tokio::try_join!(flatten(server), flatten(tokio::spawn(retainer_cleanup)),);
     r?;
     Ok(())
@@ -151,20 +194,13 @@ async fn flatten<T>(handle: JoinHandle<Result<T, eyre::Report>>) -> Result<T, ey
     }
 }
 
-async fn handle_error(err: axum::BoxError) -> impl IntoResponse {
-    tracing::error!(error=%err, "error occured");
-    (
-        StatusCode::INTERNAL_SERVER_ERROR,
-        "Unhandled internal error".to_string(),
-    )
-}
-
 #[derive(Template)]
 #[template(path = "alert.html")]
 struct AlertSite {
     alert_id: AlertId,
     alert_name: AlertName,
     last_text: AlertText,
+    cache_bust: String,
 }
 
 #[derive(Template)]
@@ -172,11 +208,14 @@ struct AlertSite {
 struct UpdateAlert {
     alert_name: AlertName,
     last_text: AlertText,
+    cache_bust: String,
 }
 
 #[derive(Template)]
 #[template(path = "new_alert.html")]
-struct NewAlert {}
+struct NewAlert {
+    cache_bust: String,
+}
 
 #[derive(Template)]
 #[template(path = "404.html")]
@@ -185,7 +224,9 @@ struct NotFound {
 }
 
 impl NotFound {
-    fn new(id: String) -> Self { Self { id } }
+    fn new(id: String) -> Self {
+        Self { id }
+    }
 }
 
 impl AlertSite {
@@ -194,6 +235,11 @@ impl AlertSite {
             alert_id,
             alert_name,
             last_text,
+            cache_bust: rand::thread_rng()
+                .sample_iter(&rand::distributions::Alphanumeric)
+                .take(7)
+                .map(char::from)
+                .collect(),
         }
     }
 }
@@ -210,7 +256,7 @@ async fn serve_alert(
             return NotFound::new(alert_id.to_string()).into_response();
         }
     };
-    AlertSite::new(alert_id, alert.name.clone(), alert.last_text.clone()).into_response()
+    AlertSite::new(alert_id, alert.name.clone(), alert.last_text).into_response()
 }
 
 #[derive(serde::Deserialize)]
@@ -233,9 +279,7 @@ async fn update_alert(
             alert.last_text = text.clone();
             alert.save_alert(&opts.db_path).await.expect("oops")
         }
-        sender
-            .send(AlertMessage::new_message(alert_id.clone(), text.clone()))
-            .unwrap();
+        let _ = sender.send(AlertMessage::new_message(alert_id.clone(), text.clone()));
         tracing::info!("updated alert.");
     }
 
@@ -249,11 +293,25 @@ async fn update_alert(
     UpdateAlert {
         alert_name: alert.name.clone(),
         last_text: alert.last_text.clone(),
+        cache_bust: rand::thread_rng()
+            .sample_iter(&rand::distributions::Alphanumeric)
+            .take(7)
+            .map(char::from)
+            .collect(),
     }
     .into_response()
 }
 
-async fn new_alert() -> axum::response::Response { NewAlert {}.into_response() }
+async fn new_alert() -> axum::response::Response {
+    NewAlert {
+        cache_bust: rand::thread_rng()
+            .sample_iter(&rand::distributions::Alphanumeric)
+            .take(7)
+            .map(char::from)
+            .collect(),
+    }
+    .into_response()
+}
 
 #[derive(serde::Deserialize, Debug)]
 pub struct NewAlertPostForm {
@@ -278,7 +336,7 @@ async fn new_alert_post(
         .expect("could not save file");
     map.insert(alert_id.clone(), alert);
 
-    AlertSite::new(alert_id, form.alert_name.clone(), form.alert_text.clone())
+    axum::response::Redirect::to(&format!("/alert/{alert_id}/update"))
 }
 
 async fn handler(
@@ -288,7 +346,15 @@ async fn handler(
     Extension(map): Extension<Arc<RwLock<HashMap<AlertId, Alert>>>>,
 ) -> impl IntoResponse {
     tracing::debug!("got call into handler");
-    ws.on_upgrade(|f| handle_socket(f, broadcast, alert_id, map))
+    ws.on_upgrade(|f| async {
+        let alert_id = alert_id;
+        if let Some(err) = handle_socket(f, broadcast, alert_id.clone(), map)
+            .await
+            .err()
+        {
+            tracing::error!(error=%err, ?alert_id, "error occured");
+        }
+    })
 }
 
 async fn handle_socket(
@@ -317,7 +383,7 @@ async fn handle_socket(
 // Reads, basically only responds to pongs. Should not be a need for refreshes, but maybe.
 async fn read(
     mut receiver: SplitStream<WebSocket>,
-    broadcast: broadcast::Sender<AlertMessage>,
+    _broadcast: broadcast::Sender<AlertMessage>,
     map: Arc<RwLock<HashMap<AlertId, Alert>>>,
     alert_id: AlertId,
 ) -> Result<(), eyre::Report> {
@@ -325,7 +391,7 @@ async fn read(
         let msg = msg?;
         if matches!(msg, Message::Text(..)) {
             let map = map.read().await;
-            if let Some(alert) = map.get(&alert_id) {
+            if let Some(_alert) = map.get(&alert_id) {
                 // TODO: This blasts out to all clients, maybe should nerf it.
                 // broadcast
                 //     .send(AlertMessage::new_message(

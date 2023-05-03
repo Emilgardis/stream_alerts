@@ -10,17 +10,22 @@
     <title>Create Alert</title>
     <meta name="description" content="" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <link rel="stylesheet" href="/static/style.css" />
+    <link rel="stylesheet" href="/static/style.css?_c={{cache_bust}}" />
     <meta property="og:type" content="website" />
   </head>
   <body class="center">
     <!--Render the text-->
     <form action="/alert/new" method="POST">
-      <label for="alert_name">Name</label>
-      <input type="text" name="alert_name" placeholder="Alert Name" />
-      <label for="alert_text">Inital Alert Text</label>
-      <input type="text" name="alert_text" placeholder="Inital Alert Text"/>
-      <input type="submit" value="Create Alert"/>
+      <div class="input-group">
+        <label for="alert_name">Name</label>
+        <input type="text" name="alert_name" placeholder="Alert Name" />
+      </div>
+      <br />
+      <div class="input-group">
+        <label for="alert_text">Inital Alert Text</label>
+        <textarea name="alert_text" placeholder="Inital Alert Text"></textarea>
+      </div>
+      <input type="submit" value="Create Alert" />
     </form>
   </body>
 </html>

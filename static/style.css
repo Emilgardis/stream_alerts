@@ -18,3 +18,13 @@ body {
   left: 50%;
   transform: translate(-50%, -50%);
 }
+
+.input-group {
+  display: flex;
+  flex-direction: column;
+  margin-bottom: 1em;
+}
+
+.input-group label {
+  margin-bottom: 0.5em;
+}
