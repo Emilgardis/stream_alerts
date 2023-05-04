@@ -12,12 +12,19 @@ use tokio::{
 pub enum AlertMessage {
     MessageMarkdown {
         alert_id: AlertId,
+        #[serde(serialize_with = "alert_ser")]
         text: AlertMarkdown,
     },
     Update {
         alert_id: AlertId,
     },
 }
+
+fn alert_ser<S: serde::Serializer>(alert: &AlertMarkdown, ser: S) -> Result<S::Ok, S::Error> {
+    use serde::Serialize;
+    alert.to_markdown().serialize(ser)
+}
+
 
 #[derive(Clone, serde::Serialize, serde::Deserialize, Debug)]
 #[serde(tag = "type")]
@@ -80,28 +87,8 @@ impl Alert {
 pub struct AlertId;
 #[aliri_braid::braid(serde)]
 pub struct AlertName;
-#[aliri_braid::braid()]
+#[aliri_braid::braid(serde)]
 pub struct AlertMarkdown;
-
-impl serde::Serialize for AlertMarkdown {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        self.to_markdown().serialize(serializer)
-    }
-}
-
-impl<'de> serde::Deserialize<'de> for AlertMarkdown {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        let s = String::deserialize(deserializer)?;
-        Ok(Self::from(s))
-    }
-}
-
 
 impl AlertMarkdownRef {
     pub fn to_markdown(&self) -> String {
