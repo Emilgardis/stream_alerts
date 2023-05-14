@@ -1,4 +1,4 @@
-use std::path::Path;
+use std::{collections::HashMap, path::Path};
 
 use axum::extract::ws::Message as WsMessage;
 use eyre::Context;
@@ -25,7 +25,6 @@ fn alert_ser<S: serde::Serializer>(alert: &AlertMarkdown, ser: S) -> Result<S::O
     alert.to_markdown().serialize(ser)
 }
 
-
 #[derive(Clone, serde::Serialize, serde::Deserialize, Debug)]
 #[serde(tag = "type")]
 pub enum AlertMessageRecv {
@@ -48,8 +47,10 @@ impl AlertMessageRecv {
 #[derive(Clone, serde::Deserialize, serde::Serialize)]
 pub struct Alert {
     pub alert_id: AlertId,
-    pub last_text: AlertMarkdown,
+    pub last_text: AlertText,
     pub name: AlertName,
+    #[serde(default)]
+    pub values: HashMap<String, String>,
 }
 
 impl Alert {
@@ -74,12 +75,24 @@ impl Alert {
         Ok(alert)
     }
 
-    pub fn new(alert_id: AlertId, last_text: AlertMarkdown, name: AlertName) -> Self {
+    pub fn new(alert_id: AlertId, last_text: AlertText, name: AlertName) -> Self {
         Self {
             alert_id,
             last_text,
             name,
+            values: HashMap::new(),
         }
+    }
+
+    pub fn render(&self) -> AlertMarkdown {
+        tracing::info!("and i op");
+        let mut text = self.last_text.to_string();
+        for (key, value) in &self.values {
+            text = text.replace(&format!("${}", key), value);
+        }
+        text = text.replace("$$", "$");
+
+        AlertMarkdown::from(text)
     }
 }
 
@@ -89,6 +102,8 @@ pub struct AlertId;
 pub struct AlertName;
 #[aliri_braid::braid(serde)]
 pub struct AlertMarkdown;
+#[aliri_braid::braid(serde)]
+pub struct AlertText;
 
 impl AlertMarkdownRef {
     pub fn to_markdown(&self) -> String {
@@ -114,6 +129,4 @@ impl AlertMessage {
     pub(crate) fn to_message(&self) -> Result<WsMessage, eyre::Report> {
         Ok(WsMessage::Text(serde_json::to_string(self)?))
     }
-
-
 }

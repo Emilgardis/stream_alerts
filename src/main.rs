@@ -5,8 +5,8 @@ mod ip;
 pub mod opts;
 pub mod util;
 
-use alerts::AlertMarkdown;
 pub use alerts::AlertMessage;
+use alerts::{AlertMarkdown, AlertText};
 use hyper::StatusCode;
 use rand::Rng;
 use std::{collections::HashMap, error::Error, sync::Arc};
@@ -115,7 +115,7 @@ pub async fn run(opts: &Opts) -> eyre::Result<()> {
                         })
                         .make_span_with(|request: &axum::http::Request<axum::body::Body>| {
                             DefaultMakeSpan::new()
-                                .include_headers(true)
+                                //.include_headers(true)
                                 .make_span(request)
                                 .in_scope(|| {
                                     tracing::info_span!(
@@ -209,8 +209,9 @@ struct AlertSite {
 struct UpdateAlert {
     alert_name: AlertName,
     alert_id: AlertId,
-    last_text: AlertMarkdown,
+    last_text: AlertText,
     cache_bust: String,
+    values: HashMap<String, String>,
 }
 
 #[derive(Template)]
@@ -258,12 +259,12 @@ async fn serve_alert(
             return NotFound::new(alert_id.to_string()).into_response();
         }
     };
-    AlertSite::new(alert_id, alert.name.clone(), alert.last_text).into_response()
+    AlertSite::new(alert_id, alert.name.clone(), alert.render()).into_response()
 }
 
 #[derive(serde::Deserialize)]
 pub struct UpdateAlertQuery {
-    alert_text: Option<AlertMarkdown>,
+    alert_text: Option<AlertText>,
     api: Option<String>,
 }
 
@@ -277,12 +278,13 @@ async fn update_alert(
 ) -> axum::response::Response {
     if let Some(text) = &update.alert_text {
         let mut map_w = map.write().await;
-        if let Some(alert) = map_w.get_mut(&alert_id) {
-            alert.last_text = text.clone();
-            alert.save_alert(&opts.db_path).await.expect("oops")
-        }
-        let _ = sender.send(AlertMessage::new_message(alert_id.clone(), text.clone()));
+        let Some(alert) = map_w.get_mut(&alert_id) else {
+            return (StatusCode::BAD_REQUEST, "no alert found").into_response();
+        };
+        alert.last_text = text.clone();
+        let _ = sender.send(AlertMessage::new_message(alert_id.clone(), alert.render()));
         tracing::info!("updated alert.");
+        alert.save_alert(&opts.db_path).await.expect("oops");
     }
 
     if update.api.is_some() {
@@ -301,6 +303,7 @@ async fn update_alert(
             .take(7)
             .map(char::from)
             .collect(),
+        values: alert.values.clone(),
     }
     .into_response()
 }
@@ -319,7 +322,7 @@ async fn new_alert() -> axum::response::Response {
 #[derive(serde::Deserialize, Debug)]
 pub struct NewAlertPostForm {
     alert_name: AlertName,
-    alert_text: AlertMarkdown,
+    alert_text: AlertText,
 }
 async fn new_alert_post(
     Extension(map): Extension<Arc<RwLock<HashMap<AlertId, Alert>>>>,
