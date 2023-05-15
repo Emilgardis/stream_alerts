@@ -1,8 +1,4 @@
-use std::{
-    collections::HashMap,
-    path::Path,
-    sync::{Arc}, error::Error,
-};
+use std::{collections::HashMap, error::Error, path::Path, sync::Arc};
 
 use askama::Template;
 use axum::{
@@ -11,10 +7,14 @@ use axum::{
         ws::{self, WebSocket},
     },
     response::IntoResponse,
-    routing::{get, post}, Extension,
+    routing::{get, post},
+    Extension,
 };
 use eyre::Context;
-use futures::{stream::{SplitSink, SplitStream}, StreamExt, SinkExt};
+use futures::{
+    stream::{SplitSink, SplitStream},
+    SinkExt, StreamExt,
+};
 use hyper::StatusCode;
 use rand::Rng;
 use tokio::{
@@ -25,10 +25,20 @@ use tokio::{
 
 use crate::opts::Opts;
 
-pub fn route(sender: broadcast::Sender<AlertMessage>) -> axum::Router {
-    axum::Router::new()
+pub async fn setup(opts: &Opts) -> Result<axum::Router, eyre::Report> {
+    let (sender, _) = broadcast::channel(16);
+    let map = Arc::new(RwLock::new(HashMap::<AlertId, Alert>::new()));
+    read_alerts(&map, opts.db_path.clone()).await?;
+    Ok(axum::Router::new()
         .route("/new", get(new_alert))
         .route("/new", post(new_alert_post))
+        .route(
+            "/ws/:id",
+            get({
+                let sender = sender.clone();
+                move |ws, id, map| handler(ws, sender, id, map)
+            }),
+        )
         .route("/:id", get(serve_alert))
         .route(
             "/:id/update",
@@ -40,10 +50,15 @@ pub fn route(sender: broadcast::Sender<AlertMessage>) -> axum::Router {
         .route(
             "/:id/update/:field",
             get({
-                let sender = sender;
+                let sender = sender.clone();
                 move |id, map, opts, query| update_alert_field(sender, id, map, opts, query)
             }),
         )
+        .layer(
+            tower::ServiceBuilder::new()
+                .layer(Extension(Arc::new(sender.clone())))
+                .layer(Extension(map.clone())),
+        ))
 }
 
 #[derive(Template)]
@@ -113,6 +128,23 @@ async fn serve_alert(
     AlertSite::new(alert_id, alert.name.clone(), alert.render()).into_response()
 }
 
+pub(crate) async fn read_alerts(
+    map: &RwLock<HashMap<AlertId, Alert>>,
+    db_path: std::path::PathBuf,
+) -> Result<(), eyre::Report> {
+    let mut i = tokio::fs::read_dir(db_path).await?;
+    let mut map = map.write().await;
+    while let Some(entry) = i.next_entry().await? {
+        if entry.file_type().await?.is_file() {
+            let path = entry.path();
+            let alert = Alert::load_alert(path).await?;
+
+            map.insert(alert.alert_id.clone(), alert);
+        }
+    }
+    Ok(())
+}
+
 #[derive(serde::Deserialize)]
 pub struct UpdateAlertQuery {
     alert_text: Option<AlertText>,
@@ -134,7 +166,8 @@ async fn update_alert(
         };
         alert.last_text = text.clone();
         let _ = sender.send(AlertMessage::new_message(alert_id.clone(), alert.render()));
-        tracing::info!("updated alert.");
+        tracing::info!(count=sender.receiver_count(), "updated alert.");
+
         alert.save_alert(&opts.db_path).await.expect("oops");
     }
 

@@ -47,24 +47,7 @@ async fn main() -> Result<(), eyre::Report> {
 }
 
 pub async fn run(opts: &Opts) -> eyre::Result<()> {
-    let (sender, _) = broadcast::channel(16);
-    let retainer = Arc::new(retainer::Cache::<axum::http::HeaderValue, ()>::new());
-    let ret = retainer.clone();
-    let retainer_cleanup = async move {
-        ret.monitor(10, 0.50, tokio::time::Duration::from_secs(86400 / 2))
-            .await;
-        Ok::<(), eyre::Report>(())
-    };
-    let map = Arc::new(RwLock::new(HashMap::<AlertId, Alert>::new()));
-    read_alerts(&map, opts.db_path.clone()).await?;
     let app = Router::new()
-        .route(
-            "/ws/:id",
-            get({
-                let sender = sender.clone();
-                move |ws, id, map| alerts::handler(ws, sender, id, map)
-            }),
-        )
         .nest_service(
             "/static",
             get_service(ServeDir::new("./static/")).handle_error(|error| async move {
@@ -75,13 +58,10 @@ pub async fn run(opts: &Opts) -> eyre::Result<()> {
                 )
             }),
         )
-        .nest("/alert", alerts::route( sender.clone()))
+        .nest("/alert", alerts::setup(opts).await?)
         .layer(
             tower::ServiceBuilder::new()
                 //.layer(axum::error_handling::HandleErrorLayer::new(handle_error))
-                .layer(Extension(Arc::new(sender.clone())))
-                .layer(Extension(retainer.clone()))
-                .layer(Extension(map.clone()))
                 .layer(Extension(Arc::new(opts.clone())))
                 .layer(
                     TraceLayer::new_for_http()
@@ -140,25 +120,8 @@ pub async fn run(opts: &Opts) -> eyre::Result<()> {
         Ok::<(), eyre::Report>(())
     });
     tracing::info!("spinning up server! http://{}", address);
-    let r = tokio::try_join!(flatten(server), flatten(tokio::spawn(retainer_cleanup)),);
+    let r = tokio::try_join!(flatten(server),);
     r?;
-    Ok(())
-}
-
-async fn read_alerts(
-    map: &RwLock<HashMap<AlertId, Alert>>,
-    db_path: std::path::PathBuf,
-) -> Result<(), eyre::Report> {
-    let mut i = tokio::fs::read_dir(db_path).await?;
-    let mut map = map.write().await;
-    while let Some(entry) = i.next_entry().await? {
-        if entry.file_type().await?.is_file() {
-            let path = entry.path();
-            let alert = Alert::load_alert(path).await?;
-
-            map.insert(alert.alert_id.clone(), alert);
-        }
-    }
     Ok(())
 }
 
