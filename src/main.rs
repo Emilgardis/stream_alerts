@@ -6,7 +6,7 @@ pub mod opts;
 pub mod util;
 
 pub use alerts::AlertMessage;
-use alerts::{AlertMarkdown, AlertText};
+use alerts::{AlertField, AlertMarkdown, AlertText};
 use hyper::StatusCode;
 use rand::Rng;
 use std::{collections::HashMap, error::Error, sync::Arc};
@@ -89,6 +89,15 @@ pub async fn run(opts: &Opts) -> eyre::Result<()> {
             get({
                 let sender = sender.clone();
                 move |id, map, opts, query| update_alert(sender, id, map, opts, query)
+            }),
+        )
+        .route(
+            "/alert/:id/update/:field",
+            get({
+                let sender = sender.clone();
+                move |id, map, opts, query| {
+                    update_alert_field(sender, id, map, opts, query)
+                }
             }),
         )
         .nest_service(
@@ -211,7 +220,7 @@ struct UpdateAlert {
     alert_id: AlertId,
     last_text: AlertText,
     cache_bust: String,
-    values: HashMap<String, String>,
+    values: HashMap<String, AlertField>,
 }
 
 #[derive(Template)]
@@ -306,6 +315,91 @@ async fn update_alert(
         values: alert.values.clone(),
     }
     .into_response()
+}
+
+#[derive(serde::Deserialize)]
+pub struct UpdateAlertFieldQuery {
+    incr: Option<i32>,
+    decr: Option<i32>,
+    set: Option<String>,
+    new: Option<String>,
+    kind: Option<String>,
+}
+
+async fn update_alert_field(
+    sender: broadcast::Sender<AlertMessage>,
+    Path((alert_id, field)): Path<(AlertId, String)>,
+    Extension(map): Extension<Arc<RwLock<HashMap<AlertId, Alert>>>>,
+    Extension(opts): Extension<Arc<Opts>>,
+    Query(update): Query<UpdateAlertFieldQuery>,
+) -> axum::response::Response {
+    let mut map = map.write().await;
+    let Some(alert) = map.get_mut(&alert_id) else {
+        return (StatusCode::BAD_REQUEST, "no alert found").into_response();
+    };
+
+    let field = alert.values.entry(field);
+
+    match (update, field) {
+        (
+            UpdateAlertFieldQuery {
+                incr: Some(incr),
+                decr: None,
+                set: None,
+                new: None,
+                kind: _,
+            },
+            std::collections::hash_map::Entry::Occupied(mut entry),
+        ) if entry.get().can_incr() => entry.get_mut().incr(incr),
+        (
+            UpdateAlertFieldQuery {
+                incr: None,
+                decr: Some(decr),
+                set: None,
+                new: None,
+                kind: _,
+            },
+            std::collections::hash_map::Entry::Occupied(mut entry),
+        ) if entry.get().can_incr() => entry.get_mut().incr(-decr),
+        (
+            UpdateAlertFieldQuery {
+                incr: None,
+                decr: None,
+                set: Some(set),
+                new: None,
+                kind: _,
+            },
+            std::collections::hash_map::Entry::Occupied(mut entry),
+        ) => entry.get_mut().set(set).unwrap(),
+        (
+            UpdateAlertFieldQuery {
+                incr: None,
+                decr: None,
+                set: None,
+                new: Some(value),
+                kind: Some(kind),
+            },
+            entry,
+        ) => match kind.as_str() {
+            "counter" => {
+                entry
+                    .and_modify(|f| *f = AlertField::Counter(value.parse().unwrap()))
+                    .or_insert(AlertField::Counter(value.parse().unwrap()));
+            }
+            "text" => {
+                entry
+                    .and_modify(|f| *f = AlertField::Text(value.clone()))
+                    .or_insert(AlertField::Text(value.clone()));
+            }
+            _ => return (StatusCode::BAD_REQUEST, "invalid kind").into_response(),
+        },
+        _ => return (StatusCode::BAD_REQUEST, "invalid update requested").into_response(),
+    };
+    let _ = sender.send(AlertMessage::new_message(alert_id.clone(), alert.render()));
+
+    alert.save_alert(&opts.db_path).await.expect("oops");
+
+    (StatusCode::OK, "done!").into_response()
 }
 
 async fn new_alert() -> axum::response::Response {

@@ -50,7 +50,51 @@ pub struct Alert {
     pub last_text: AlertText,
     pub name: AlertName,
     #[serde(default)]
-    pub values: HashMap<String, String>,
+    pub values: HashMap<String, AlertField>,
+}
+
+#[derive(Clone, serde::Deserialize, serde::Serialize, Debug, PartialEq)]
+pub enum AlertField {
+    Text(String),
+    Counter(i32),
+}
+
+impl AlertField {
+    pub(crate) fn set(&mut self, set: String) -> Result<(), eyre::Report> {
+        match self {
+            AlertField::Text(text) => *text = set,
+            AlertField::Counter(counter) => {
+                let set: i32 = set.parse()?;
+                *counter = set;
+            }
+        }
+        Ok(())
+    }
+    pub fn can_incr(&self) -> bool {
+        match self {
+            AlertField::Text(_) => false,
+            AlertField::Counter(_) => true,
+        }
+    }
+
+    /// increment value, noop if not supported
+    pub fn incr(&mut self, incr: i32) {
+        match self {
+            AlertField::Text(_) => {}
+            AlertField::Counter(counter) => {
+                *counter += incr;
+            }
+        }
+    }
+}
+
+impl std::fmt::Display for AlertField {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            AlertField::Text(s) => write!(f, "{s}"),
+            AlertField::Counter(i) => write!(f, "{i}"),
+        }
+    }
 }
 
 impl Alert {
@@ -88,7 +132,7 @@ impl Alert {
         tracing::info!("and i op");
         let mut text = self.last_text.to_string();
         for (key, value) in &self.values {
-            text = text.replace(&format!("${}", key), value);
+            text = text.replace(&format!("${key}"), &value.to_string());
         }
         text = text.replace("$$", "$");
 
