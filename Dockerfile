@@ -20,7 +20,7 @@ FROM debian:bullseye-slim as runtime
 WORKDIR /app
 ARG RUN_DEPS
 RUN apt-get update && apt-get install -y ${RUN_DEPS}
-COPY --from=builder /app/server/debug/stream_alerts /app/stream_alerts
+COPY --from=builder /app/server/release/stream_alerts /app/stream_alerts
 COPY --from=builder /app/site /app/site
 ENV LEPTOS_SITE_ADDR="0.0.0.0:3000" \
     APP_ENVIRONMENT="production" \
