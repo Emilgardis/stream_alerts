@@ -4,13 +4,7 @@ pub mod update;
 use new::*;
 use update::*;
 
-use gloo_net::http::Method;
-use gloo_utils::format::JsValueSerdeExt;
 use leptos::*;
-use leptos::*;
-use leptos_meta::*;
-use leptos_router::*;
-
 use leptos_meta::*;
 use leptos_router::*;
 
@@ -22,7 +16,7 @@ pub fn App(cx: Scope) -> impl IntoView {
 
     view! { cx,
         <Stylesheet id="leptos" href="/pkg/site.css"/>
-        <Title text="Welcome to Leptos"/>
+        //<Title text="Welcome to Leptos"/>
         <Router>
             <main>
                 <Routes>
@@ -48,5 +42,6 @@ pub fn App(cx: Scope) -> impl IntoView {
 pub fn register_server_fns() {
     tracing::info!("registering server fns");
     update::register_server_fns();
+    new::register_server_fns();
     _ = super::alerts::ReadAlert::register();
 }

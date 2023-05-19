@@ -31,7 +31,7 @@ async fn main() -> Result<(), eyre::Report> {
         .route(
             "/backend/*fn_name",
             post(move |path, header, query, req| {
-                let manager = manager_fn.clone();
+                let manager = manager.clone();
                 leptos_axum::handle_server_fns_with_context(
                     path,
                     header,
@@ -51,7 +51,10 @@ async fn main() -> Result<(), eyre::Report> {
             leptos_options.clone(),
             routes,
             move |cx| {
-                leptos::provide_context::<stream_alerts::alerts::AlertManager>(cx, manager.clone());
+                leptos::provide_context::<stream_alerts::alerts::AlertManager>(
+                    cx,
+                    manager_fn.clone(),
+                );
             },
             move |cx| {
                 view! { cx, <App/> }
@@ -75,7 +78,10 @@ async fn main() -> Result<(), eyre::Report> {
                                 uri = tracing::field::display(request.uri()),
                                 method = tracing::field::display(request.method()),
                                 ip = tracing::field::Empty,
-                                user_agent = request.headers().get(http::header::USER_AGENT).map(tracing::field::debug)
+                                user_agent = request
+                                    .headers()
+                                    .get(http::header::USER_AGENT)
+                                    .map(tracing::field::debug)
                             )
                         })
                 })

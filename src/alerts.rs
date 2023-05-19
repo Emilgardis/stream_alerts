@@ -6,7 +6,7 @@ use axum::{
         ws::{self, WebSocket},
     },
     response::IntoResponse,
-    routing::{get, post},
+    routing::get,
     Extension,
 };
 use eyre::Context;
@@ -39,13 +39,17 @@ use crate::opts::Opts;
 #[cfg(feature = "ssr")]
 
 pub struct AlertManager {
-    pub alerts: Arc<RwLock<HashMap<AlertId, Alert>>>,
+    alerts: Arc<RwLock<HashMap<AlertId, Alert>>>,
     pub sender: broadcast::Sender<AlertMessage>,
     pub db_path: std::path::PathBuf,
 }
 
 #[cfg(feature = "ssr")]
 impl AlertManager {
+    pub async fn read_alerts(&self) -> tokio::sync::RwLockReadGuard<HashMap<AlertId, Alert>> {
+        self.alerts.read().await
+    }
+
     pub async fn edit_alert(
         &self,
         alert_id: &AlertId,
@@ -78,6 +82,22 @@ impl AlertManager {
         alert.save_alert(&self.db_path).await.expect("oops");
         Ok(Ok(()))
     }
+
+    pub async fn new_alert(&self, alert: Alert) -> Result<(), leptos::server_fn::ServerFnError> {
+        {
+            let mut map_w = self.alerts.write().await;
+            alert.save_alert(&self.db_path).await.expect("oops");
+            map_w.insert(alert.alert_id.clone(), alert.clone());
+        }
+
+        let _ = self.sender.send(AlertMessage::new_message(
+            alert.alert_id.clone(),
+            alert.render(),
+        ));
+        tracing::info!(count = self.sender.receiver_count(), "updated alert.");
+
+        Ok(())
+    }
 }
 
 #[server(ReadAlert, "/backend")]
@@ -99,6 +119,11 @@ pub async fn setup(opts: &Opts) -> Result<(axum::Router, AlertManager), eyre::Re
     let (sender, _) = broadcast::channel(16);
     let map = Arc::new(RwLock::new(HashMap::<AlertId, Alert>::new()));
     read_alerts(&map, opts.db_path.clone()).await?;
+    let manager = AlertManager {
+        alerts: map,
+        sender: sender.clone(),
+        db_path: opts.db_path.clone(),
+    };
     Ok((
         axum::Router::new()
             //.route("/new", get(new_alert))
@@ -111,30 +136,9 @@ pub async fn setup(opts: &Opts) -> Result<(axum::Router, AlertManager), eyre::Re
                 }),
             )
             .route("/:id", get(serve_alert))
-            //.route(
-            //    "/:id/update",
-            //    get({
-            //        let sender = sender.clone();
-            //        move |id, map, opts, query| update_alert(sender, id, map, opts, query)
-            //    }),
-            //)
-            //.route(
-            //    "/:id/update/:field",
-            //    get({
-            //        let sender = sender.clone();
-            //        move |id, map, opts, query| update_alert_field(sender, id, map, opts, query)
-            //    }),
-            //)
-            .layer(
-                tower::ServiceBuilder::new()
-                    .layer(Extension(Arc::new(sender.clone())))
-                    .layer(Extension(map.clone())),
-            ),
-        AlertManager {
-            alerts: map,
-            sender,
-            db_path: opts.db_path.clone(),
-        },
+            .route("/:id/update/:field", get(update_alert_field))
+            .layer(Extension(manager.clone())),
+        manager,
     ))
 }
 
@@ -144,12 +148,6 @@ struct AlertSite {
     alert_id: AlertId,
     alert_name: AlertName,
     last_text: AlertMarkdown,
-    cache_bust: String,
-}
-
-#[derive(Template)]
-#[template(path = "new_alert.html")]
-struct NewAlert {
     cache_bust: String,
 }
 
@@ -183,13 +181,13 @@ impl AlertSite {
 #[cfg(feature = "ssr")]
 async fn serve_alert(
     extract::Path(alert_id): extract::Path<AlertId>,
-    Extension(map): Extension<Arc<RwLock<HashMap<AlertId, Alert>>>>,
+    Extension(manager): Extension<AlertManager>,
 ) -> axum::response::Response {
     let alert: Alert = {
-        let map_r = map.read().await;
-        if let Some(alert) = map_r.get(&alert_id) {
+        if let Some(alert) = manager.read_alerts().await.get(&alert_id) {
             alert.clone()
         } else {
+            // TODO: rdirect to leptos 404
             return NotFound::new(alert_id.to_string()).into_response();
         }
     };
@@ -231,65 +229,21 @@ pub struct UpdateAlertField {
 
 #[cfg(feature = "ssr")]
 async fn update_alert_field(
-    sender: broadcast::Sender<AlertMessage>,
     extract::Path((alert_id, field)): extract::Path<(AlertId, AlertFieldName)>,
-    Extension(map): Extension<Arc<RwLock<HashMap<AlertId, Alert>>>>,
-    Extension(opts): Extension<Arc<Opts>>,
+    Extension(manager): Extension<AlertManager>,
     extract::Query(update): extract::Query<UpdateAlertField>,
 ) -> axum::response::Response {
-    let mut map = map.write().await;
-    let Some(alert) = map.get_mut(&alert_id) else {
-        return (StatusCode::BAD_REQUEST, "no alert found").into_response();
-    };
-
-    if let Err(error) = alert.update_field(field, update) {
-        return (StatusCode::BAD_REQUEST, error.to_string()).into_response();
-    }
-
-    let _ = sender.send(AlertMessage::new_message(alert_id.clone(), alert.render()));
-
-    alert.save_alert(&opts.db_path).await.expect("oops");
-
-    (StatusCode::OK, "done!").into_response()
-}
-
-#[cfg(feature = "ssr")]
-async fn new_alert() -> axum::response::Response {
-    NewAlert {
-        cache_bust: rand::thread_rng()
-            .sample_iter(&rand::distributions::Alphanumeric)
-            .take(7)
-            .map(char::from)
-            .collect(),
-    }
-    .into_response()
-}
-
-#[derive(serde::Deserialize, Debug)]
-pub struct NewAlertPostForm {
-    alert_name: AlertName,
-    alert_text: AlertText,
-}
-#[cfg(feature = "ssr")]
-async fn new_alert_post(
-    Extension(map): Extension<Arc<RwLock<HashMap<AlertId, Alert>>>>,
-    Extension(opts): Extension<Arc<Opts>>,
-    form: extract::Form<NewAlertPostForm>,
-) -> impl IntoResponse {
-    let mut map = map.write().await;
-    let alert_id: AlertId = nanoid::nanoid!().into();
-    let alert = Alert::new(
-        alert_id.clone(),
-        form.alert_text.clone(),
-        form.alert_name.clone(),
-    );
-    alert
-        .save_alert(&opts.db_path)
+    match manager
+        .try_edit_alert(&alert_id, |a| {
+            a.update_field(Some(field), None, update)
+                .map_err(|error| (StatusCode::BAD_REQUEST, error.to_string()).into_response())
+        })
         .await
-        .expect("could not save file");
-    map.insert(alert_id.clone(), alert);
-
-    axum::response::Redirect::to(&format!("/alert/{alert_id}/update"))
+    {
+        Ok(Ok(_)) => (StatusCode::OK, "done!").into_response(),
+        Ok(Err(e)) => (StatusCode::BAD_REQUEST, e.to_string()).into_response(),
+        Err(e) => e,
+    }
 }
 
 #[cfg(feature = "ssr")]
@@ -299,7 +253,7 @@ pub(crate) async fn handler(
     extract::Path(alert_id): extract::Path<AlertId>,
     Extension(map): Extension<Arc<RwLock<HashMap<AlertId, Alert>>>>,
 ) -> impl IntoResponse {
-    tracing::debug!("got call into handler");
+    //tracing::debug!("got call into handler");
     ws.on_upgrade(|f| async {
         let alert_id = alert_id;
         if let Some(err) = handle_socket(f, broadcast, alert_id.clone(), map)
@@ -435,7 +389,7 @@ pub struct Alert {
     pub last_text: AlertText,
     pub name: AlertName,
     #[serde(default)]
-    pub fields: BTreeMap<AlertFieldName, (AlertFieldId, AlertField)>,
+    pub fields: BTreeMap<AlertFieldId, (AlertFieldName, AlertField)>,
 }
 
 #[derive(Clone, serde::Deserialize, serde::Serialize, Debug, PartialEq)]
@@ -490,6 +444,20 @@ impl std::fmt::Display for AlertField {
 }
 
 impl Alert {
+    pub fn entry_field_name(
+        &mut self,
+        field_name: AlertFieldName,
+    ) -> Option<std::collections::btree_map::Entry<'_, AlertFieldId, (AlertFieldName, AlertField)>>
+    {
+        let id = self
+            .fields
+            .iter()
+            .find_map(|(id, (name, _))| (name == &field_name).then(|| id.clone()));
+        id.map(|id| self.fields.entry(id))
+    }
+}
+
+impl Alert {
     #[cfg(feature = "ssr")]
     pub async fn save_alert(&self, db_path: impl AsRef<Path>) -> Result<(), eyre::Report> {
         let mut file = OpenOptions::new()
@@ -525,8 +493,8 @@ impl Alert {
     pub fn render(&self) -> AlertMarkdown {
         tracing::info!("and i op");
         let mut text = self.last_text.to_string();
-        for (key, value) in &self.fields {
-            text = text.replace(&format!("${key}"), &value.1.to_string());
+        for (name, value) in self.fields.values() {
+            text = text.replace(&format!("${name}"), &value.to_string());
         }
         text = text.replace("$$", "$");
 
@@ -535,10 +503,18 @@ impl Alert {
 
     fn update_field(
         &mut self,
-        field: AlertFieldName,
+        name: Option<AlertFieldName>,
+        id: Option<AlertFieldId>,
         update: UpdateAlertField,
     ) -> Result<(), eyre::Report> {
-        let field = self.fields.entry(field);
+        let field = match (name, id) {
+            (_, Some(id)) => self.fields.entry(id),
+            (Some(name), None) => self
+                .entry_field_name(name)
+                .ok_or_else(|| eyre::eyre!("no such field"))?,
+            (None, None) => eyre::bail!("no field name or id provided"),
+        };
+
         match (update, field) {
             (
                 UpdateAlertField {
@@ -578,18 +554,14 @@ impl Alert {
                     new: Some(value),
                     kind: Some(kind),
                 },
-                entry,
+                std::collections::btree_map::Entry::Occupied(mut entry),
             ) => match kind.as_str() {
                 "counter" => {
                     let value = value.parse()?;
-                    entry
-                        .and_modify(|f| f.1 = AlertField::Counter(value))
-                        .or_insert((AlertFieldId::new_id(), AlertField::Counter(value)));
+                    entry.get_mut().1 = AlertField::Counter(value);
                 }
                 "text" => {
-                    entry
-                        .and_modify(|f| f.1 = AlertField::Text(value.clone()))
-                        .or_insert((AlertFieldId::new_id(), AlertField::Text(value.clone())));
+                    entry.get_mut().1 = AlertField::Text(value);
                 }
                 _ => return Err(eyre::eyre!("invalid kind")),
             },
@@ -609,12 +581,12 @@ impl Alert {
         tracing::debug!("adding new field");
         match kind {
             "counter" => self.fields.insert(
-                name,
-                (AlertFieldId::new_id(), AlertField::Counter(value.parse()?)),
+                AlertFieldId::new_id(),
+                (name, AlertField::Counter(value.parse()?)),
             ),
             "text" => self
                 .fields
-                .insert(name, (AlertFieldId::new_id(), AlertField::Text(value))),
+                .insert(AlertFieldId::new_id(), (name, AlertField::Text(value))),
             _ => return Err(eyre::eyre!("invalid kind")),
         };
         Ok(())
@@ -639,6 +611,13 @@ macro_rules! attr_type {
 #[aliri_braid::braid(serde)]
 pub struct AlertId;
 attr_type!(AlertId);
+
+impl AlertId {
+    pub fn new_id() -> Self {
+        Self(nanoid::nanoid!())
+    }
+}
+
 #[aliri_braid::braid(serde)]
 pub struct AlertName;
 attr_type!(AlertName);

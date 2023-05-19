@@ -4,13 +4,13 @@ WORKDIR /app
 ARG BUILD_DEPS
 RUN apt-get update && apt-get install -y ${BUILD_DEPS}
 ARG CARGO_REGISTRIES_CRATES_IO_PROTOCOL=sparse
-RUN wget https://github.com/cargo-bins/cargo-binstall/releases/latest/download/cargo-binstall-x86_64-unknown-linux-musl.tgz -O /tmp/cargo-binstall.tgz && \
-    tar -xvf /tmp/cargo-binstall.tgz -C /usr/local/cargo/bin && \
-    rm /tmp/cargo-binstall.tgz
+#RUN wget https://github.com/cargo-bins/cargo-binstall/releases/latest/download/cargo-binstall-x86_64-unknown-linux-musl.tgz -O /tmp/cargo-binstall.tgz && \
+#    tar -xvf /tmp/cargo-binstall.tgz -C /usr/local/cargo/bin && \
+#    rm /tmp/cargo-binstall.tgz
 RUN rustup target add wasm32-unknown-unknown
 RUN --mount=type=cache,target=/usr/local/cargo/git \
     --mount=type=cache,target=/usr/local/cargo/registry \
-    cargo binstall cargo-leptos -y
+    cargo install cargo-leptos --locked --git https://github.com/leptos-rs/cargo-leptos --rev 34dd942
 COPY . .
 RUN --mount=type=cache,target=/usr/local/cargo/git \
     --mount=type=cache,target=/usr/local/cargo/registry \

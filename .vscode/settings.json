@@ -20,5 +20,6 @@
     },
     "css.validate": false,
     "rust-analyzer.procMacro.ignored": {
+        "leptos": ["server", "component"]
     }
 }
