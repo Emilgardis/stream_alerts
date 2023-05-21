@@ -2,12 +2,39 @@
 #[tokio::main]
 async fn main() -> Result<(), eyre::Report> {
     use axum::{extract::Extension, routing::post, Router};
+    use axum_login::AuthLayer;
     use leptos::*;
     use leptos_axum::{generate_route_list, LeptosRoutes};
     use std::sync::Arc;
     use stream_alerts::app::*;
     use stream_alerts::fileserv::file_and_error_handler;
+    use tokio::sync::RwLock;
     use tower_http::trace::{DefaultMakeSpan, MakeSpan, TraceLayer};
+
+    #[axum::debug_handler]
+    async fn leptos_handler(
+        auth_context: stream_alerts::auth::AuthContext,
+        Extension(manager): Extension<stream_alerts::alerts::AlertManager>,
+        Extension(options): Extension<Arc<LeptosOptions>>,
+        user: Option<Extension<stream_alerts::auth::User>>,
+        req: http::Request<axum::body::Body>,
+    ) -> axum::response::Response {
+        use axum::response::IntoResponse;
+        tracing::info!(?user, "got req");
+        let handler = leptos_axum::render_app_to_stream_with_context(
+            (*options).clone(),
+            move |cx| {
+                //provide_context(cx, auth_session.clone());
+                provide_context::<stream_alerts::alerts::AlertManager>(cx, manager.clone());
+                provide_context::<stream_alerts::auth::AuthContext>(cx, auth_context.clone());
+            },
+            move |cx| {
+                view! { cx, <App/> }
+            },
+        );
+        handler(req).await.into_response()
+    }
+
     stream_alerts::util::install_utils().unwrap();
     let opts = <stream_alerts::opts::Opts as clap::Parser>::parse();
     // Setting get_configuration(None) means we'll be using cargo-leptos's env values
@@ -16,7 +43,7 @@ async fn main() -> Result<(), eyre::Report> {
     // Alternately a file can be specified such as Some("Cargo.toml")
     // The file would need to be included with the executable when moved to deployment
     let conf = get_configuration(None).await.unwrap();
-    let leptos_options = conf.leptos_options;
+    let leptos_options = Arc::new(conf.leptos_options);
     let addr = leptos_options.site_addr;
     let routes = generate_route_list(|cx| view! { cx, <App/> }).await;
 
@@ -25,43 +52,60 @@ async fn main() -> Result<(), eyre::Report> {
 
     let (alert_router, manager) = stream_alerts::alerts::setup(&opts).await?;
 
-    let manager_fn = manager.clone();
+    let user_store = Arc::new(RwLock::new(std::collections::HashMap::<
+        i64,
+        stream_alerts::auth::User,
+    >::new()));
+
+    let session_store = axum_login::axum_sessions::async_session::MemoryStore::new();
+    let session_layer = axum_login::axum_sessions::SessionLayer::new(session_store, &[0; 64]);
+    let user_store = axum_login::memory_store::MemoryStore::new(&user_store);
+    let auth_layer = axum_login::AuthLayer::new(user_store, &[0; 64]);
     // build our application with a route
-    let app = Router::new()
+    let app: Router<_> = Router::new()
+        .nest("/alert", alert_router)
         .route(
             "/backend/*fn_name",
-            post(move |path, header, query, req| {
-                let manager = manager.clone();
-                leptos_axum::handle_server_fns_with_context(
-                    path,
-                    header,
-                    query,
-                    move |cx| {
-                        leptos::provide_context::<stream_alerts::alerts::AlertManager>(
-                            cx,
-                            manager.clone(),
-                        );
-                    },
-                    req,
-                )
-            }),
+            post(
+                move |user: Option<Extension<stream_alerts::auth::User>>,
+                      Extension(manager): Extension<stream_alerts::alerts::AlertManager>,
+                      path: axum::extract::Path<String>,
+                      header,
+                      query,
+                      req| {
+                    use axum::response::IntoResponse;
+
+                    async move {
+                        tracing::info!("got req for {}", path.0);
+                        if !path.0.contains("unauthed/") && user.is_none() {
+                            return (http::StatusCode::UNAUTHORIZED, "Unauthorized")
+                                .into_response();
+                        }
+                        leptos_axum::handle_server_fns_with_context(
+                            path,
+                            header,
+                            query,
+                            move |cx| {
+                                leptos::provide_context::<stream_alerts::alerts::AlertManager>(
+                                    cx,
+                                    manager.clone(),
+                                );
+                            },
+                            req,
+                        )
+                        .await
+                        .into_response()
+                    }
+                },
+            ),
         )
-        .nest("/alert", alert_router)
-        .leptos_routes_with_context(
-            leptos_options.clone(),
-            routes,
-            move |cx| {
-                leptos::provide_context::<stream_alerts::alerts::AlertManager>(
-                    cx,
-                    manager_fn.clone(),
-                );
-            },
-            move |cx| {
-                view! { cx, <App/> }
-            },
-        )
+        .leptos_routes_with_handler(routes, axum::routing::get(leptos_handler))
         .fallback(file_and_error_handler)
-        .layer(Extension(Arc::new(leptos_options)))
+        // TODO: Use state
+        .layer(Extension(manager.clone()))
+        .layer(Extension(Arc::clone(&leptos_options)))
+        .layer(auth_layer)
+        .layer(session_layer)
         .layer(
             TraceLayer::new_for_http()
                 .on_failure(|error, _latency, _span: &tracing::Span| {

@@ -1,6 +1,8 @@
+pub mod login;
 pub mod new;
 pub mod update;
 
+use login::*;
 use new::*;
 use update::*;
 
@@ -8,32 +10,40 @@ use leptos::*;
 use leptos_meta::*;
 use leptos_router::*;
 
+use crate::auth::User;
+
 #[component]
 #[track_caller]
 pub fn App(cx: Scope) -> impl IntoView {
     // Provides context that manages stylesheets, titles, meta tags, etc.
     provide_meta_context(cx);
 
+    let user = create_rw_signal::<Option<User>>(cx, None);
+
     view! { cx,
         <Stylesheet id="leptos" href="/pkg/site.css"/>
         //<Title text="Welcome to Leptos"/>
         <Router>
-            <main>
-                <Routes>
-                    <Route
-                        path="/alert/:id/update"
-                        view=|cx| {
-                            view! { cx, <UpdateAlert/> }
-                        }
-                    />
-                    <Route
-                        path="/alert/new"
-                        view=|cx| {
-                            view! { cx, <NewAlert/> }
-                        }
-                    />
-                </Routes>
-            </main>
+            { match user.get() {
+                Some(user) =>
+                view! {cx, <main>
+                    <Routes>
+                        <Route
+                            path="/alert/:id/update"
+                            view=|cx| {
+                                view! { cx, <UpdateAlert/> }
+                            }
+                        />
+                        <Route
+                            path="/alert/new"
+                            view=|cx| {
+                                view! { cx, <NewAlert/> }
+                            }
+                        />
+                    </Routes>
+                </main>}.into_any(),
+                None => view!{cx, <div><Login user=user/></div> }.into_any()
+                        }}
         </Router>
     }
 }
@@ -43,5 +53,6 @@ pub fn register_server_fns() {
     tracing::info!("registering server fns");
     update::register_server_fns();
     new::register_server_fns();
+    login::register_server_fns();
     _ = super::alerts::ReadAlert::register();
 }
