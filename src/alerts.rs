@@ -251,12 +251,12 @@ pub(crate) async fn handler(
     ws: ws::WebSocketUpgrade,
     broadcast: broadcast::Sender<AlertMessage>,
     extract::Path(alert_id): extract::Path<AlertId>,
-    Extension(map): Extension<Arc<RwLock<HashMap<AlertId, Alert>>>>,
+    Extension(manager): Extension<AlertManager>,
 ) -> impl IntoResponse {
-    //tracing::debug!("got call into handler");
+    tracing::debug!("handling ws connection");
     ws.on_upgrade(|f| async {
         let alert_id = alert_id;
-        if let Some(err) = handle_socket(f, broadcast, alert_id.clone(), map)
+        if let Some(err) = handle_socket(f, broadcast, alert_id.clone(), manager)
             .await
             .err()
         {
@@ -270,7 +270,7 @@ async fn handle_socket(
     socket: WebSocket,
     broadcast: broadcast::Sender<AlertMessage>,
     alert_id: AlertId,
-    map: Arc<RwLock<HashMap<AlertId, Alert>>>,
+    manager: AlertManager,
 ) -> Result<(), eyre::Report> {
     let (sender, receiver) = socket.split();
 
@@ -282,7 +282,7 @@ async fn handle_socket(
         )) => {
             r
         }
-        r = tokio::spawn(read(receiver, broadcast, map, alert_id)) => {
+        r = tokio::spawn(read(receiver, broadcast, manager, alert_id)) => {
             r
         }
     )
@@ -294,13 +294,13 @@ async fn handle_socket(
 async fn read(
     mut receiver: SplitStream<WebSocket>,
     _broadcast: broadcast::Sender<AlertMessage>,
-    map: Arc<RwLock<HashMap<AlertId, Alert>>>,
+    manager: AlertManager,
     alert_id: AlertId,
 ) -> Result<(), eyre::Report> {
     while let Some(msg) = receiver.next().await {
         let msg = msg?;
         if matches!(msg, ws::Message::Text(..)) {
-            let map = map.read().await;
+            let map = manager.read_alerts().await;
             if let Some(_alert) = map.get(&alert_id) {
                 // TODO: This blasts out to all clients, maybe should nerf it.
                 // broadcast
