@@ -21,27 +21,63 @@
         history.replaceState(null, null, "?" + queryParams.toString());
         window.location.reload();
       };
+      update_field = function (key, value) {
+        var queryParams = new URLSearchParams("");
+        queryParams.set("set", value);
+        var location =
+          window.location.pathname + "/" + key + queryParams.toString();
+        window
+          .fetch(location)
+          .then(function (response) {
+            console.log(response);
+          })
+          .catch(function (error) {
+            console.error(error);
+          });
+      };
     </script>
   </head>
   <body class="center">
     <h1>Update alert: {{alert_name}}</h1>
     <p>Link: <a href="/alert/{{alert_id}}">{{alert_id}}</a></p>
+    <ul>
+      {% for (key, value) in values %}
+      <li>
+        <!-- input for the value-->
+        <label for="{{key}}">{{key}}</label>
+        <input
+          id="field_{{key}}"
+          name="{{key}}"
+          type="text"
+          value="{{value}}"
+          placeholder="{{key}}"
+        />
+        <button
+          onclick="update_field('{{key}}', document.getElementById('field_{{key}}').value)"
+        >
+          Update
+        </button>
+      </li>
+      {% endfor %}
+    </ul>
 
     <form>
       <div class="input-group">
         <label for="alert_text">Update text</label>
-      <textarea
-        id="alert_text"
-        name="alert_text"
-        class="alert-text alert-text-editor"
-        placeholder="Inital Alert Text"
-      >{{last_text}}</textarea>
-      <input
-        id="submit"
-        type="submit"
-        value="Update Alert"
-        onclick="update_text()"
-      />
+        <textarea
+          id="alert_text"
+          name="alert_text"
+          class="alert-text alert-text-editor"
+          placeholder="Inital Alert Text"
+        >
+{{last_text}}</textarea
+        >
+        <input
+          id="submit"
+          type="submit"
+          value="Update Alert"
+          onclick="update_text()"
+        />
       </div>
     </form>
   </body>

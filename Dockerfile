@@ -1,19 +1,29 @@
 # syntax = docker/dockerfile:1.2
-FROM rust:1-alpine3.17 as builder
+FROM rust:1-slim-bullseye as builder
 WORKDIR /app
 ARG BUILD_DEPS
-RUN apk add --no-cache ${BUILD_DEPS}
+RUN apt-get update && apt-get install -y ${BUILD_DEPS}
+ARG CARGO_REGISTRIES_CRATES_IO_PROTOCOL=sparse
+#RUN wget https://github.com/cargo-bins/cargo-binstall/releases/latest/download/cargo-binstall-x86_64-unknown-linux-musl.tgz -O /tmp/cargo-binstall.tgz && \
+#    tar -xvf /tmp/cargo-binstall.tgz -C /usr/local/cargo/bin && \
+#    rm /tmp/cargo-binstall.tgz
+RUN rustup target add wasm32-unknown-unknown
+RUN --mount=type=cache,target=/usr/local/cargo/git \
+    --mount=type=cache,target=/usr/local/cargo/registry \
+    cargo install cargo-leptos --locked --git https://github.com/leptos-rs/cargo-leptos --rev 34dd942
 COPY . .
-ARG RUSTFLAGS=-Ctarget-feature=-crt-static
-RUN --mount=type=cache,target=$CARGO_HOME/git \
-    --mount=type=cache,target=$CARGO_HOME/registry \
-    --mount=type=cache,sharing=private,target=/app/target \
-    cargo -V; cargo build --release --bin alerts_sessis_live && mv /app/target/release/alerts_sessis_live /app/alerts_sessis_live
-FROM alpine:3.17 as runtime
+RUN --mount=type=cache,target=/usr/local/cargo/git \
+    --mount=type=cache,target=/usr/local/cargo/registry \
+    --mount=type=cache,target=/app/target \
+    cargo -V; cargo leptos -V; cargo leptos build --release && cp -r /app/target/server/ /app/ && cp -r /app/target/site /app/
+FROM debian:bullseye-slim as runtime
 WORKDIR /app
 ARG RUN_DEPS
-RUN apk add --no-cache \
-        ${RUN_DEPS}
-COPY --from=builder /app/alerts_sessis_live /app/alerts_sessis_live
-COPY ./static ./static
-ENTRYPOINT ["/app/alerts_sessis_live", "--interface", "0.0.0.0"]
+RUN apt-get update && apt-get install -y ${RUN_DEPS}
+COPY --from=builder /app/server/release/stream_alerts /app/stream_alerts
+COPY --from=builder /app/site /app/site
+ENV LEPTOS_SITE_ADDR="0.0.0.0:3000" \
+    APP_ENVIRONMENT="production" \
+    LEPTOS_SITE_ROOT="site"
+EXPOSE 3000
+ENTRYPOINT ["/app/stream_alerts"]

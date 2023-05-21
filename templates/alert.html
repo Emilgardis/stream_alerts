@@ -10,7 +10,7 @@
     <title>Alert View - {{alert_name}}</title>
     <meta name="description" content="" />
     <meta name="viewport" content="width=800,height=600, initial-scale=1" />
-    <link rel="stylesheet" href="/static/style.css?_c={{cache_bust}}" />
+    <link rel="stylesheet" href="/static/alert-style.css?_c={{cache_bust}}" />
     <meta property="og:type" content="website" />
     <script>
       window.onload = function () {
@@ -23,7 +23,7 @@
       var timerId;
       function connect() {
         var ws = new WebSocket(
-          protocol + window.location.host + "/ws/{{alert_id}}"
+          protocol + window.location.host + "/alert/ws/{{alert_id}}"
         );
         ws.onmessage = function (event) {
           var data = JSON.parse(event.data);
@@ -35,9 +35,12 @@
             document.getElementById("text").innerHTML = data.text;
           }
         };
+        ws.onerror = function (event) {
+          console.error("error", event);
+        };
         ws.onopen = function () {
           clearInterval(timerId);
-
+          console.info("ws connected")
           ws.send(
             JSON.stringify({
               type: "init",
