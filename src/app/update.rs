@@ -19,6 +19,7 @@ pub fn UpdateAlert(cx: Scope) -> impl IntoView {
     );
 
     let update_alert_text = create_server_action::<UpdateAlertText>(cx);
+    let update_alert_name = create_server_action::<UpdateAlertName>(cx);
 
     view! { cx,
         <div class="">
@@ -34,7 +35,11 @@ pub fn UpdateAlert(cx: Scope) -> impl IntoView {
                             let alert = create_rw_signal(cx, alert);
                             provide_context(cx, alert);
                             view! { cx,
-                                <h1>{move || format!("Update Alert {}", alert.get().name)}</h1>
+                                <h1>"Update Alert" <ActionForm class="flex-col" action=update_alert_name>
+                                    <AlertIdInput/>
+                                    <input type="text" name="name" class="border-none" value=move|| alert.with(|a| a.name.clone())/>
+                                    <input type="submit" class="border-none" value="Change name"/>
+                                </ActionForm> </h1>
                                 <A href=move || format!("/alert/{}", alert.get().alert_id)>"View"</A>
                                 <ActionForm action=update_alert_text class="bg-white rounded px-8 pt-6 pb-8 mb-4">
                                     <label for="alert_text">"Update text"</label>
@@ -46,11 +51,7 @@ pub fn UpdateAlert(cx: Scope) -> impl IntoView {
                                         class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded"
                                         value="Submit"
                                     />
-                                    <input
-                                        type="hidden"
-                                        name="alert_id"
-                                        value=move || alert.with(|a| a.alert_id.to_string())
-                                    />
+                                    <AlertIdInput/>
                                 </ActionForm>
                                 <AlertFields/>
                             }

@@ -32,7 +32,7 @@ pub fn Login(cx: Scope, user: RwSignal<Option<crate::auth::User>>) -> impl IntoV
 pub fn LoginRedirect(cx: Scope) -> impl IntoView {
     let location = use_location(cx);
 
-    view! {cx, <p>"Access Denied!"</p><A href=move || format!("/login?redirect={}", location.pathname.get())>"Login?"</A>}
+    view! {cx, <p>"Access Denied!"</p><A class="hover:underline" href=move || format!("/login?redirect={}", location.pathname.get())>"Login?"</A>}
 }
 #[server(LoginUser, "/backend/public")]
 #[tracing::instrument(err)]

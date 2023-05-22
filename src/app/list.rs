@@ -22,19 +22,17 @@ pub fn ListAlerts(cx: Scope) -> impl IntoView {
         <p>"Alerts"</p>
         <Suspense fallback=move || view!{cx, <p>"loading"</p>}>
         <ErrorBoundary fallback=move |cx, e| {
-            tracing::info!("error boundary: {:?}", e.get().iter().map(|e| e.1.to_string()).collect::<Vec<_>>());
             view!{cx, <LoginRedirect/>}}>
         { move || alerts.read(cx).ok_or(ServerFnError::ServerError("not logged in?".to_owned())).and_then(move |res| {
-            tracing::info!(?res, "wtf");
             res.map( move |alerts|
                 view! {cx,
-                    <ul>
+                    <ul class="">
                     <For each=move || alerts.clone()
                          key=|a| a.0.clone()
                          view=|cx, a| {
                              view! {cx,
                                  <li>
-                                 <A href=move || format!("{}/update", a.0)>{a.1.name}</A>
+                                 <A class="hover:text-blue-400 hover:underline" href=move || format!("{}/update", a.0)>{a.1.name}</A>
                                  </li>
                              }
                          }
