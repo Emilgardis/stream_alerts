@@ -30,18 +30,6 @@ pub async fn login(
 
     let res_options_outer = use_context::<leptos_axum::ResponseOptions>(cx);
     if let Some(res_options) = res_options_outer {
-        let cookie = cookie::Cookie::build(
-            crate::auth::COOKIE_AUTH_USER_LOGIN,
-            format!("{}:{}", name, password),
-        )
-        .path("/")
-        .http_only(true)
-        .finish();
-        res_options.insert_header(
-            http::header::SET_COOKIE,
-            cookie.encoded().to_string().parse().unwrap(),
-        );
-
         if name == "emil" {
             auth.login(&crate::auth::User {
                 name: "emil".into(),
