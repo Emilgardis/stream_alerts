@@ -4,8 +4,8 @@ use leptos::*;
 use leptos_meta::*;
 use leptos_router::*;
 
-pub use crate::alerts::*;
 pub use super::login::*;
+pub use crate::alerts::*;
 
 #[component]
 #[track_caller]
@@ -27,8 +27,6 @@ pub fn UpdateAlert(cx: Scope) -> impl IntoView {
             }>
             //<Title text=move || alert.read(cx).map(|a| format!("Update Alert {}", a.name)).unwrap()/>
                 <ErrorBoundary fallback=move |cx, _| view!{cx, <LoginRedirect/>}>
-                <h1>{move || alert.read(cx).map(|a| a.map(|a| format!("Update Alert {}", a.name)))}</h1>
-                {alert.with(cx, |a| a.clone().map(move |a| view!{cx, <A href=format!("/alert/{}", a.alert_id)>"View"</A> }))}
                 {move || {
                     alert
                         .read(cx)
@@ -36,6 +34,8 @@ pub fn UpdateAlert(cx: Scope) -> impl IntoView {
                             let alert = create_rw_signal(cx, alert);
                             provide_context(cx, alert);
                             view! { cx,
+                                <h1>{move || format!("Update Alert {}", alert.get().name)}</h1>
+                                <A href=move || format!("/alert/{}", alert.get().alert_id)>"View"</A>
                                 <ActionForm action=update_alert_text class="bg-white rounded px-8 pt-6 pb-8 mb-4">
                                     <label for="alert_text">"Update text"</label>
                                     <textarea id="alert_text" name="text" class="">
@@ -222,7 +222,6 @@ pub async fn update_alert_name(
     let alert = map_r.get(&alert_id).expect("no alert found");
     Ok(alert.clone())
 }
-
 
 #[server(UpdateAlertText, "/backend")]
 #[tracing::instrument(err)]
