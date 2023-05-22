@@ -24,9 +24,7 @@ pub fn App(cx: Scope) -> impl IntoView {
         <Stylesheet id="leptos" href="/pkg/site.css"/>
         //<Title text="Welcome to Leptos"/>
         <Router>
-            { match user.get() {
-                Some(user) =>
-                view! {cx, <main>
+            <main>
                     <Routes>
                         <Route
                             path="/alert/:id/update"
@@ -40,10 +38,14 @@ pub fn App(cx: Scope) -> impl IntoView {
                                 view! { cx, <NewAlert/> }
                             }
                         />
+                        <Route
+                            path="/login"
+                            view=move |cx| {
+                                view! { cx, <Login user=user/> }
+                            }
+                        />
                     </Routes>
-                </main>}.into_any(),
-                None => view!{cx, <div><Login user=user/></div> }.into_any()
-                        }}
+                </main>
         </Router>
     }
 }

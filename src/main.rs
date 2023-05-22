@@ -11,29 +11,29 @@ async fn main() -> Result<(), eyre::Report> {
     use tokio::sync::RwLock;
     use tower_http::trace::{DefaultMakeSpan, MakeSpan, TraceLayer};
 
-    #[axum::debug_handler]
-    async fn leptos_handler(
-        auth_context: stream_alerts::auth::AuthContext,
-        Extension(manager): Extension<stream_alerts::alerts::AlertManager>,
-        Extension(options): Extension<Arc<LeptosOptions>>,
-        user: Option<Extension<stream_alerts::auth::User>>,
-        req: http::Request<axum::body::Body>,
-    ) -> axum::response::Response {
-        use axum::response::IntoResponse;
-        tracing::info!(?user, "got req");
-        let handler = leptos_axum::render_app_to_stream_with_context(
-            (*options).clone(),
-            move |cx| {
-                //provide_context(cx, auth_session.clone());
-                provide_context::<stream_alerts::alerts::AlertManager>(cx, manager.clone());
-                provide_context::<stream_alerts::auth::AuthContext>(cx, auth_context.clone());
-            },
-            move |cx| {
-                view! { cx, <App/> }
-            },
-        );
-        handler(req).await.into_response()
-    }
+#[axum::debug_handler]
+async fn leptos_handler(
+    //auth_context: stream_alerts::auth::AuthContext,
+    Extension(manager): Extension<stream_alerts::alerts::AlertManager>,
+    Extension(options): Extension<Arc<LeptosOptions>>,
+    //user: Option<Extension<stream_alerts::auth::User>>,
+    req: http::Request<axum::body::Body>,
+) -> axum::response::Response {
+    use axum::response::IntoResponse;
+    //tracing::info!(?user, "got req");
+    let handler = leptos_axum::render_app_to_stream_with_context(
+        (*options).clone(),
+        move |cx| {
+            //provide_context(cx, auth_session.clone());
+            provide_context::<stream_alerts::alerts::AlertManager>(cx, manager.clone());
+            //provide_context::<stream_alerts::auth::AuthContext>(cx, auth_context.clone());
+        },
+        move |cx| {
+            view! { cx, <App/> }
+        },
+    );
+    handler(req).await.into_response()
+}
 
     stream_alerts::util::install_utils().unwrap();
     let opts = <stream_alerts::opts::Opts as clap::Parser>::parse();
@@ -67,8 +67,9 @@ async fn main() -> Result<(), eyre::Report> {
         .route(
             "/backend/*fn_name",
             post(
-                move |user: Option<Extension<stream_alerts::auth::User>>,
+                move |//user: Option<Extension<stream_alerts::auth::User>>,
                       Extension(manager): Extension<stream_alerts::alerts::AlertManager>,
+                      //auth: stream_alerts::auth::AuthContext,
                       path: axum::extract::Path<String>,
                       header,
                       query,
@@ -76,11 +77,12 @@ async fn main() -> Result<(), eyre::Report> {
                     use axum::response::IntoResponse;
 
                     async move {
-                        tracing::info!("got req for {}", path.0);
-                        if !path.0.contains("unauthed/") && user.is_none() {
+                        tracing::info!("got req for {:?}", path);
+                        if Some(1).is_none() && !path.0.contains("public/") {
                             return (http::StatusCode::UNAUTHORIZED, "Unauthorized")
                                 .into_response();
                         }
+                        let path = axum::extract::Path(path.0.trim_start_matches("public/").to_owned());
                         leptos_axum::handle_server_fns_with_context(
                             path,
                             header,
@@ -90,6 +92,10 @@ async fn main() -> Result<(), eyre::Report> {
                                     cx,
                                     manager.clone(),
                                 );
+                                //leptos::provide_context::<stream_alerts::auth::AuthContext>(
+                                //    cx,
+                                //    auth.clone(),
+                                //);
                             },
                             req,
                         )
@@ -104,8 +110,7 @@ async fn main() -> Result<(), eyre::Report> {
         // TODO: Use state
         .layer(Extension(manager.clone()))
         .layer(Extension(Arc::clone(&leptos_options)))
-        .layer(auth_layer)
-        .layer(session_layer)
+
         .layer(
             TraceLayer::new_for_http()
                 .on_failure(|error, _latency, _span: &tracing::Span| {
@@ -153,7 +158,10 @@ async fn main() -> Result<(), eyre::Report> {
                         tracing::trace!("request received");
                     },
                 ),
-        );
+        )
+        //.layer(auth_layer)
+        //.layer(session_layer)
+        ;
 
     // run our app with hyper
     // `axum::Server` is a re-export of `hyper::Server`

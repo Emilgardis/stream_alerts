@@ -18,7 +18,7 @@ pub fn Login(cx: Scope, user: RwSignal<Option<crate::auth::User>>) -> impl IntoV
     }
 }
 
-#[server(LoginUser, "/backend/unauthed")]
+#[server(LoginUser, "/backend/public")]
 #[tracing::instrument(err)]
 pub async fn login(
     cx: Scope,
