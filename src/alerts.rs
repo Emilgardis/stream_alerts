@@ -114,6 +114,18 @@ pub async fn read_alert(cx: Scope, alert: AlertId) -> Result<Alert, leptos::Serv
         .clone())
 }
 
+#[server(ReadAllAlerts, "/backend")]
+#[tracing::instrument(err)]
+pub async fn read_all_alerts(cx: Scope) -> Result<Vec<(AlertId, Alert)>, leptos::ServerFnError> {
+    // do some server-only work here to access the database
+    let Some(alerts): Option<AlertManager> = leptos::use_context(cx) else {
+        tracing::info!("manager not found!");
+        return Err(leptos::ServerFnError::ServerError("Missing manager".to_owned()));
+    };
+    let alerts = alerts.alerts.read().await;
+    Ok(alerts.clone().into_iter().collect())
+}
+
 #[cfg(feature = "ssr")]
 pub async fn setup(opts: &Opts) -> Result<(axum::Router, AlertManager), eyre::Report> {
     let (sender, _) = broadcast::channel(16);
@@ -158,9 +170,7 @@ struct NotFound {
 }
 
 impl NotFound {
-    fn new(id: String) -> Self {
-        Self { id }
-    }
+    fn new(id: String) -> Self { Self { id } }
 }
 
 impl AlertSite {
@@ -399,9 +409,7 @@ pub enum AlertField {
 }
 
 impl Default for AlertField {
-    fn default() -> Self {
-        Self::Text(String::new())
-    }
+    fn default() -> Self { Self::Text(String::new()) }
 }
 
 impl AlertField {
@@ -608,14 +616,18 @@ macro_rules! attr_type {
     };
 }
 
+impl leptos::IntoView for AlertName {
+    fn into_view(self, cx: Scope) -> View {
+        self.to_string().into_view(cx)
+    }
+}
+
 #[aliri_braid::braid(serde)]
 pub struct AlertId;
 attr_type!(AlertId);
 
 impl AlertId {
-    pub fn new_id() -> Self {
-        Self(nanoid::nanoid!())
-    }
+    pub fn new_id() -> Self { Self(nanoid::nanoid!()) }
 }
 
 #[aliri_braid::braid(serde)]
@@ -638,15 +650,11 @@ pub struct AlertFieldId;
 attr_type!(AlertFieldId);
 
 impl Default for AlertFieldId {
-    fn default() -> Self {
-        Self::new_id()
-    }
+    fn default() -> Self { Self::new_id() }
 }
 
 impl AlertFieldId {
-    pub fn new_id() -> Self {
-        Self(nanoid::nanoid!(4))
-    }
+    pub fn new_id() -> Self { Self(nanoid::nanoid!(4)) }
 }
 
 impl AlertMarkdownRef {

@@ -10,30 +10,40 @@ async fn main() -> Result<(), eyre::Report> {
     use stream_alerts::fileserv::file_and_error_handler;
     use tokio::sync::RwLock;
     use tower_http::trace::{DefaultMakeSpan, MakeSpan, TraceLayer};
+    use tracing::instrument;
 
-#[axum::debug_handler]
-async fn leptos_handler(
-    //auth_context: stream_alerts::auth::AuthContext,
-    Extension(manager): Extension<stream_alerts::alerts::AlertManager>,
-    Extension(options): Extension<Arc<LeptosOptions>>,
-    //user: Option<Extension<stream_alerts::auth::User>>,
-    req: http::Request<axum::body::Body>,
-) -> axum::response::Response {
-    use axum::response::IntoResponse;
-    //tracing::info!(?user, "got req");
-    let handler = leptos_axum::render_app_to_stream_with_context(
-        (*options).clone(),
-        move |cx| {
-            //provide_context(cx, auth_session.clone());
-            provide_context::<stream_alerts::alerts::AlertManager>(cx, manager.clone());
-            //provide_context::<stream_alerts::auth::AuthContext>(cx, auth_context.clone());
-        },
-        move |cx| {
-            view! { cx, <App/> }
-        },
-    );
-    handler(req).await.into_response()
-}
+    #[axum::debug_handler]
+    async fn leptos_handler(
+        auth: stream_alerts::auth::AuthContext,
+        Extension(manager): Extension<stream_alerts::alerts::AlertManager>,
+        Extension(options): Extension<Arc<LeptosOptions>>,
+        //user: Option<Extension<stream_alerts::auth::User>>,
+        req: http::Request<axum::body::Body>,
+    ) -> axum::response::Response {
+        use axum::response::IntoResponse;
+        let span = tracing::info_span!("leptos", auth.current_user = ?auth.current_user);
+        let span_c = span.clone();
+        let span_c2 = span.clone();
+        let handler = leptos_axum::render_app_async_with_context(
+            (*options).clone(),
+            move |cx| {
+                let _s = span_c.enter();
+                tracing::info!("providing context");
+                //provide_context(cx, auth_session.clone());
+                if auth.current_user.is_some() {
+                    provide_context::<stream_alerts::alerts::AlertManager>(cx, manager.clone());
+                }
+                provide_context::<stream_alerts::auth::AuthContext>(cx, auth.clone());
+            },
+            move |cx| {
+                let _s = span_c2.enter();
+                view! { cx, <App/> }
+            },
+        );
+        tracing::Instrument::instrument(handler(req), span)
+            .await
+            .into_response()
+    }
 
     stream_alerts::util::install_utils().unwrap();
     let opts = <stream_alerts::opts::Opts as clap::Parser>::parse();
@@ -52,56 +62,66 @@ async fn leptos_handler(
 
     let (alert_router, manager) = stream_alerts::alerts::setup(&opts).await?;
 
-    let user_store = Arc::new(RwLock::new(std::collections::HashMap::<
-        i64,
-        stream_alerts::auth::User,
-    >::new()));
+    let (session_layer, auth_layer, user_store) = stream_alerts::auth::setup(&opts).await?;
 
-    let session_store = axum_login::axum_sessions::async_session::MemoryStore::new();
-    let session_layer = axum_login::axum_sessions::SessionLayer::new(session_store, &[0; 64]);
-    let user_store = axum_login::memory_store::MemoryStore::new(&user_store);
-    let auth_layer = axum_login::AuthLayer::new(user_store, &[0; 64]);
     // build our application with a route
     let app: Router<_> = Router::new()
         .nest("/alert", alert_router)
         .route(
             "/backend/*fn_name",
             post(
-                move |//user: Option<Extension<stream_alerts::auth::User>>,
+                move |
                       Extension(manager): Extension<stream_alerts::alerts::AlertManager>,
-                      //auth: stream_alerts::auth::AuthContext,
+                      Extension(user_store): Extension<stream_alerts::auth::Users>,
+                      auth: stream_alerts::auth::AuthContext,
                       path: axum::extract::Path<String>,
                       header,
                       query,
                       req| {
                     use axum::response::IntoResponse;
 
-                    async move {
-                        tracing::info!("got req for {:?}", path);
-                        if Some(1).is_none() && !path.0.contains("public/") {
-                            return (http::StatusCode::UNAUTHORIZED, "Unauthorized")
-                                .into_response();
-                        }
-                        let path = axum::extract::Path(path.0.trim_start_matches("public/").to_owned());
-                        leptos_axum::handle_server_fns_with_context(
-                            path,
-                            header,
-                            query,
-                            move |cx| {
-                                leptos::provide_context::<stream_alerts::alerts::AlertManager>(
-                                    cx,
-                                    manager.clone(),
-                                );
-                                //leptos::provide_context::<stream_alerts::auth::AuthContext>(
-                                //    cx,
-                                //    auth.clone(),
-                                //);
-                            },
-                            req,
-                        )
-                        .await
-                        .into_response()
-                    }
+                    let span =
+                        tracing::info_span!("server_fn", server_fn = path.0, auth.current_user = ?auth.current_user, ?auth);
+                    tracing::Instrument::instrument(
+                        async move {
+                            if auth.current_user.is_none() && !path.0.contains("public/") {
+                                tracing::warn!("Unauthorized access");
+                                return (http::StatusCode::UNAUTHORIZED, "Unauthorized")
+                                    .into_response();
+                            }
+                            if auth.current_user.is_some() {
+                                tracing::debug!("authorized access");
+                            } else {
+                                tracing::debug!("public access");
+                            }
+                            let path = axum::extract::Path(
+                                path.0.trim_start_matches("public/").to_owned(),
+                            );
+                            leptos_axum::handle_server_fns_with_context(
+                                path,
+                                header,
+                                query,
+                                move |cx| {
+                                    leptos::provide_context::<stream_alerts::alerts::AlertManager>(
+                                        cx,
+                                        manager.clone(),
+                                    );
+                                    leptos::provide_context::<stream_alerts::auth::AuthContext>(
+                                        cx,
+                                        auth.clone(),
+                                    );
+                                    leptos::provide_context::<stream_alerts::auth::Users>(
+                                        cx,
+                                        user_store.clone(),
+                                    );
+                                },
+                                req,
+                            )
+                            .await
+                            .into_response()
+                        },
+                        span,
+                    )
                 },
             ),
         )
@@ -110,7 +130,9 @@ async fn leptos_handler(
         // TODO: Use state
         .layer(Extension(manager.clone()))
         .layer(Extension(Arc::clone(&leptos_options)))
-
+        .layer(Extension(user_store))
+        .layer(auth_layer)
+        .layer(session_layer)
         .layer(
             TraceLayer::new_for_http()
                 .on_failure(|error, _latency, _span: &tracing::Span| {
@@ -121,12 +143,23 @@ async fn leptos_handler(
                         //.include_headers(true)
                         .make_span(request)
                         .in_scope(|| {
+                            // get cookie `sid`
+                            let sid = request.headers().get("cookie").and_then(|cookie| {
+                                let cookie = cookie.to_str().ok()?;
+                                cookie
+                                    .split("; ")
+                                    .filter_map(|cookie| {
+                                        cookie.strip_prefix("stream_alerts_session=")
+                                    })
+                                    .next()
+                            });
                             tracing::info_span!(
                                 "http-request",
+                                sid = sid,
+                                ip = tracing::field::Empty,
                                 status_code = tracing::field::Empty,
                                 uri = tracing::field::display(request.uri()),
                                 method = tracing::field::display(request.method()),
-                                ip = tracing::field::Empty,
                                 user_agent = request
                                     .headers()
                                     .get(http::header::USER_AGENT)
@@ -142,7 +175,7 @@ async fn leptos_handler(
                         if response.status().is_success() {
                             tracing::trace!("response generated");
                         } else {
-                            tracing::error!("error response generated");
+                            tracing::trace!("error response generated");
                         }
                     },
                 )
@@ -158,10 +191,7 @@ async fn leptos_handler(
                         tracing::trace!("request received");
                     },
                 ),
-        )
-        //.layer(auth_layer)
-        //.layer(session_layer)
-        ;
+        )        ;
 
     // run our app with hyper
     // `axum::Server` is a re-export of `hyper::Server`

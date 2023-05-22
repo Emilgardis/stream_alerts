@@ -5,13 +5,14 @@ use leptos_meta::*;
 use leptos_router::*;
 
 pub use crate::alerts::*;
+pub use super::login::*;
 
 #[component]
 #[track_caller]
 pub fn UpdateAlert(cx: Scope) -> impl IntoView {
     let params = use_params_map(cx);
 
-    let alert = create_resource(
+    let alert = create_blocking_resource(
         cx,
         move || params.with(|p| p.get("id").cloned().unwrap_or_default().into()),
         move |id| async move { crate::alerts::read_alert(cx, id).await },
@@ -19,14 +20,13 @@ pub fn UpdateAlert(cx: Scope) -> impl IntoView {
 
     let update_alert_text = create_server_action::<UpdateAlertText>(cx);
 
-    tracing::info!(?alert);
     view! { cx,
         <div class="">
             <Suspense fallback=move || {
                 view! { cx, <Title text="Update Alert"/><h1>"Update Alert"</h1> }
             }>
             //<Title text=move || alert.read(cx).map(|a| format!("Update Alert {}", a.name)).unwrap()/>
-                <ErrorBoundary fallback=|cx, _| view!{cx, <p>"No such alert"</p>}>
+                <ErrorBoundary fallback=move |cx, _| view!{cx, <LoginRedirect/>}>
                 <h1>{move || alert.read(cx).map(|a| a.map(|a| format!("Update Alert {}", a.name)))}</h1>
                 {alert.with(cx, |a| a.clone().map(move |a| view!{cx, <A href=format!("/alert/{}", a.alert_id)>"View"</A> }))}
                 {move || {
@@ -201,6 +201,29 @@ pub fn AlertIdInput(cx: Scope) -> impl IntoView {
     }
 }
 
+#[server(UpdateAlertName, "/backend")]
+#[tracing::instrument(err)]
+pub async fn update_alert_name(
+    cx: Scope,
+    alert_id: AlertId,
+    name: String,
+) -> Result<Alert, leptos::ServerFnError> {
+    let Some(manager): Option<AlertManager> = leptos::use_context(cx) else {
+        return Err(leptos::ServerFnError::ServerError("Missing manager".to_owned()));
+    };
+
+    manager
+        .edit_alert(&alert_id, move |alert| {
+            alert.name = name.into();
+        })
+        .await?;
+
+    let map_r = manager.read_alerts().await;
+    let alert = map_r.get(&alert_id).expect("no alert found");
+    Ok(alert.clone())
+}
+
+
 #[server(UpdateAlertText, "/backend")]
 #[tracing::instrument(err)]
 pub async fn update_alert_text(
@@ -306,6 +329,7 @@ pub async fn add_alert_field(
 #[cfg(feature = "ssr")]
 pub(crate) fn register_server_fns() {
     _ = UpdateAlertText::register();
+    _ = UpdateAlertName::register();
     _ = UpdateAlertField::register();
     _ = DeleteAlertField::register();
     _ = AddAlertField::register();

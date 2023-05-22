@@ -1,7 +1,9 @@
+pub mod list;
 pub mod login;
 pub mod new;
 pub mod update;
 
+use list::*;
 use login::*;
 use new::*;
 use update::*;
@@ -23,29 +25,27 @@ pub fn App(cx: Scope) -> impl IntoView {
     view! { cx,
         <Stylesheet id="leptos" href="/pkg/site.css"/>
         //<Title text="Welcome to Leptos"/>
-        <Router>
+        <Router >
             <main>
-                    <Routes>
-                        <Route
-                            path="/alert/:id/update"
-                            view=|cx| {
-                                view! { cx, <UpdateAlert/> }
-                            }
-                        />
-                        <Route
-                            path="/alert/new"
-                            view=|cx| {
-                                view! { cx, <NewAlert/> }
-                            }
-                        />
-                        <Route
-                            path="/login"
-                            view=move |cx| {
-                                view! { cx, <Login user=user/> }
-                            }
-                        />
-                    </Routes>
-                </main>
+                <Routes>
+                    <Route
+                        path="/alert"
+                        view=|cx| view!{cx, <ListAlerts/>}
+                    />
+                    <Route ssr=SsrMode::OutOfOrder
+                        path="/alert/:id/update"
+                        view=|cx| view! { cx, <UpdateAlert/> }
+                    />
+                    <Route ssr=SsrMode::OutOfOrder
+                        path="/alert/new"
+                        view=|cx| view! { cx, <NewAlert/> }
+                    />
+                    <Route ssr=SsrMode::OutOfOrder
+                        path="/login"
+                        view=move |cx| view! { cx, <Login user=user/> }
+                    />
+                </Routes>
+            </main>
         </Router>
     }
 }
@@ -57,4 +57,5 @@ pub fn register_server_fns() {
     new::register_server_fns();
     login::register_server_fns();
     _ = super::alerts::ReadAlert::register();
+    _ = super::alerts::ReadAllAlerts::register();
 }

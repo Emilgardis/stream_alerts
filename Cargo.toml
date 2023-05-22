@@ -72,14 +72,16 @@ hyper = { version = "0.14", optional = true }
 nanoid = "0.4.0"
 aliri_braid = "0.3.1"
 forwarded-header-value = { version = "0.1.1", optional = true }
-rand = "0.8.5"
+rand = { version = "0.8.5", features = ["min_const_gen"] }
 comrak = { version = "0.18.0", default-features = false }
 axum-login = { version = "0.5.0", optional = true }
 cookie = { version = "0.17.0", optional = true }
+scrypt = { version = "0.11.0", optional = true }
+async-trait = { version = "0.1.68", optional = true }
 
 [features]
 hydrate = ["leptos/hydrate", "leptos_meta/hydrate", "leptos_router/hydrate"]
-ssr = ["dep:axum-login", "dep:axum", "dep:cookie", "dep:dotenvy", "dep:forwarded-header-value", "dep:hyper", "dep:leptos_axum", "dep:tokio-tungstenite", "dep:tokio", "dep:tower-http", "dep:tower", "leptos_meta/ssr", "leptos_router/ssr", "leptos/ssr", "tower-http?/tracing"]
+ssr = ["dep:async-trait", "dep:axum-login", "dep:axum", "dep:cookie", "dep:dotenvy", "dep:forwarded-header-value", "dep:hyper", "dep:leptos_axum", "dep:tokio-tungstenite", "dep:tokio", "dep:tower-http", "dep:tower", "dep:scrypt", "leptos_meta/ssr", "leptos_router/ssr", "leptos/ssr", "tower-http?/tracing"]
 
 
 [build-dependencies]
@@ -87,6 +89,9 @@ built = { version = "0.6.0", features = ["chrono", "git2"] }
 
 
 [profile.dev.package.backtrace]
+opt-level = 3
+
+[profile.dev.package.scrypt]
 opt-level = 3
 
 [package.metadata.cargo-all-features]

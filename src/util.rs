@@ -19,9 +19,7 @@ impl<'a> MakeWriter<'a> for MakeConsoleWriter {
 pub struct ConsoleWriter(tracing::Level, Vec<u8>);
 
 impl io::Write for ConsoleWriter {
-    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        self.1.write(buf)
-    }
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> { self.1.write(buf) }
 
     fn flush(&mut self) -> io::Result<()> {
         use gloo::console;
@@ -43,9 +41,7 @@ impl io::Write for ConsoleWriter {
 }
 
 impl Drop for ConsoleWriter {
-    fn drop(&mut self) {
-        let _ = self.flush();
-    }
+    fn drop(&mut self) { let _ = self.flush(); }
 }
 
 pub mod built_info {
@@ -94,7 +90,11 @@ pub fn install_tracing() {
     use tracing_subscriber::prelude::*;
     use tracing_subscriber::{fmt, EnvFilter};
 
-    let fmt_layer = fmt::layer().with_target(true).compact();
+    let fmt_layer = fmt::layer()
+        .with_target(true)
+        .with_file(true)
+        .with_line_number(true)
+        .pretty();
     #[rustfmt::skip]
     let filter_layer = EnvFilter::try_from_default_env()
         .or_else(|_| EnvFilter::try_new("debug"))

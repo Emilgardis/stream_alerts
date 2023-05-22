@@ -11,7 +11,6 @@ pub mod ip;
 
 pub mod auth;
 
-
 cfg_if! { if #[cfg(feature = "hydrate")] {
     use leptos::*;
     use wasm_bindgen::prelude::wasm_bindgen;
