@@ -60,6 +60,4 @@ pub async fn new_alert(cx: Scope, name: String) -> Result<AlertId, leptos::Serve
 }
 
 #[cfg(feature = "ssr")]
-pub(crate) fn register_server_fns() {
-    _ = NewAlert::register();
-}
+pub(crate) fn register_server_fns() { _ = NewAlert::register(); }

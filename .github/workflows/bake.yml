@@ -46,8 +46,9 @@ jobs:
             docker-bake.hcl
             ${{ steps.meta.outputs.bake-file}}
           set: |
+            *.cache-from=type=registry,ref=ghcr.io/${{ env.IMAGE_NAME_FQ }}:edge
             *.cache-from=type=gha
-            *.cache-to=type=gha
+            *.cache-to=type=gha,mode=max
       # - name: Delete old images
       #   uses: snok/container-retention-policy@v1
       #   with:

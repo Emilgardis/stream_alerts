@@ -4,6 +4,7 @@ use leptos::*;
 use leptos_meta::*;
 use leptos_router::*;
 
+pub use super::login::*;
 pub use crate::alerts::*;
 
 #[component]
@@ -11,24 +12,22 @@ pub use crate::alerts::*;
 pub fn UpdateAlert(cx: Scope) -> impl IntoView {
     let params = use_params_map(cx);
 
-    let alert = create_resource(
+    let alert = create_blocking_resource(
         cx,
         move || params.with(|p| p.get("id").cloned().unwrap_or_default().into()),
         move |id| async move { crate::alerts::read_alert(cx, id).await },
     );
 
     let update_alert_text = create_server_action::<UpdateAlertText>(cx);
+    let update_alert_name = create_server_action::<UpdateAlertName>(cx);
 
-    tracing::info!(?alert);
     view! { cx,
         <div class="">
             <Suspense fallback=move || {
                 view! { cx, <Title text="Update Alert"/><h1>"Update Alert"</h1> }
             }>
             //<Title text=move || alert.read(cx).map(|a| format!("Update Alert {}", a.name)).unwrap()/>
-                <ErrorBoundary fallback=|cx, _| view!{cx, <p>"No such alert"</p>}>
-                <h1>{move || alert.read(cx).map(|a| a.map(|a| format!("Update Alert {}", a.name)))}</h1>
-                {alert.with(cx, |a| a.clone().map(move |a| view!{cx, <A href=format!("/alert/{}", a.alert_id)>"View"</A> }))}
+                <ErrorBoundary fallback=move |cx, _| view!{cx, <LoginRedirect/>}>
                 {move || {
                     alert
                         .read(cx)
@@ -36,6 +35,12 @@ pub fn UpdateAlert(cx: Scope) -> impl IntoView {
                             let alert = create_rw_signal(cx, alert);
                             provide_context(cx, alert);
                             view! { cx,
+                                <h1>"Update Alert" <ActionForm class="flex-col" action=update_alert_name>
+                                    <AlertIdInput/>
+                                    <input type="text" name="name" class="border-none" value=move|| alert.with(|a| a.name.clone())/>
+                                    <input type="submit" class="border-none" value="Change name"/>
+                                </ActionForm> </h1>
+                                <A href=move || format!("/alert/{}", alert.get().alert_id)>"View"</A>
                                 <ActionForm action=update_alert_text class="bg-white rounded px-8 pt-6 pb-8 mb-4">
                                     <label for="alert_text">"Update text"</label>
                                     <textarea id="alert_text" name="text" class="">
@@ -46,11 +51,7 @@ pub fn UpdateAlert(cx: Scope) -> impl IntoView {
                                         class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded"
                                         value="Submit"
                                     />
-                                    <input
-                                        type="hidden"
-                                        name="alert_id"
-                                        value=move || alert.with(|a| a.alert_id.to_string())
-                                    />
+                                    <AlertIdInput/>
                                 </ActionForm>
                                 <AlertFields/>
                             }
@@ -201,6 +202,28 @@ pub fn AlertIdInput(cx: Scope) -> impl IntoView {
     }
 }
 
+#[server(UpdateAlertName, "/backend")]
+#[tracing::instrument(err)]
+pub async fn update_alert_name(
+    cx: Scope,
+    alert_id: AlertId,
+    name: String,
+) -> Result<Alert, leptos::ServerFnError> {
+    let Some(manager): Option<AlertManager> = leptos::use_context(cx) else {
+        return Err(leptos::ServerFnError::ServerError("Missing manager".to_owned()));
+    };
+
+    manager
+        .edit_alert(&alert_id, move |alert| {
+            alert.name = name.into();
+        })
+        .await?;
+
+    let map_r = manager.read_alerts().await;
+    let alert = map_r.get(&alert_id).expect("no alert found");
+    Ok(alert.clone())
+}
+
 #[server(UpdateAlertText, "/backend")]
 #[tracing::instrument(err)]
 pub async fn update_alert_text(
@@ -306,6 +329,7 @@ pub async fn add_alert_field(
 #[cfg(feature = "ssr")]
 pub(crate) fn register_server_fns() {
     _ = UpdateAlertText::register();
+    _ = UpdateAlertName::register();
     _ = UpdateAlertField::register();
     _ = DeleteAlertField::register();
     _ = AddAlertField::register();
