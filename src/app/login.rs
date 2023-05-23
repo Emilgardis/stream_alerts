@@ -11,7 +11,7 @@ pub fn Login(cx: Scope, user: RwSignal<Option<crate::auth::User>>) -> impl IntoV
     let redirect = move || {
         query
             .with(|p| p.get("redirect").map(|s| s.to_owned()))
-            .unwrap_or_else(|| "/aaa".to_owned())
+            .unwrap_or_else(|| "/alert".to_owned())
     };
 
     view! {cx,
@@ -65,6 +65,4 @@ pub async fn login(
 }
 
 #[cfg(feature = "ssr")]
-pub(crate) fn register_server_fns() {
-    _ = LoginUser::register();
-}
+pub(crate) fn register_server_fns() { _ = LoginUser::register(); }
