@@ -19,6 +19,17 @@ pub struct User {
     password_hash: String,
 }
 
+#[cfg(feature = "ssr")]
+pub static RNG: once_cell::sync::Lazy<std::sync::Mutex<rand::rngs::StdRng>> =
+    once_cell::sync::Lazy::new(|| {
+        let seed = if cfg!(debug_assertions) {
+            tracing::warn!("using insecure rng");
+            std::array::from_fn(|i| (10 + i) as u8)
+        } else {
+            rand::Rng::gen(&mut rand::thread_rng())
+        };
+        std::sync::Mutex::new(<rand::rngs::StdRng as rand::SeedableRng>::from_seed(seed))
+    });
 impl User {
     #[cfg(feature = "ssr")]
     pub fn new(
@@ -28,7 +39,7 @@ impl User {
     ) -> Result<Self, scrypt::password_hash::errors::Error> {
         use scrypt::password_hash::PasswordHasher;
 
-        let salt = scrypt::password_hash::SaltString::generate(&mut rand::thread_rng());
+        let salt = scrypt::password_hash::SaltString::generate(&mut *RNG.lock().unwrap());
         let password_hash = scrypt::Scrypt.hash_password(password, &salt)?;
         Ok(Self {
             name,
@@ -105,9 +116,7 @@ impl axum_login::UserStore<i64, Role> for Users {
 
 #[cfg(feature = "ssr")]
 impl axum_login::AuthUser<i64, Role> for User {
-    fn get_id(&self) -> i64 {
-        self.id
-    }
+    fn get_id(&self) -> i64 { self.id }
 
     fn get_password_hash(&self) -> axum_login::secrecy::SecretVec<u8> {
         tracing::info!("getting password hash");
@@ -115,14 +124,19 @@ impl axum_login::AuthUser<i64, Role> for User {
     }
 }
 
+#[cfg(not(debug_assertions))]
+#[cfg(feature = "ssr")]
+pub type SessionStore = axum_login::axum_sessions::async_session::MemoryStore;
+#[cfg(debug_assertions)]
+#[cfg(feature = "ssr")]
+pub type SessionStore = axum_login::axum_sessions::async_session::CookieStore;
+
 #[cfg(feature = "ssr")]
 pub async fn setup(
     opts: &Opts,
 ) -> Result<
     (
-        axum_login::axum_sessions::SessionLayer<
-            axum_login::axum_sessions::async_session::MemoryStore,
-        >,
+        axum_login::axum_sessions::SessionLayer<SessionStore>,
         axum_login::AuthLayer<Users, i64, User, Role>,
         Users,
     ),
@@ -141,12 +155,14 @@ pub async fn setup(
         )?,
     );
 
-    let secret = rand::thread_rng().gen::<[u8; 64]>();
+    let secret = RNG.lock().unwrap().gen::<[u8; 64]>();
 
-    let session_store = axum_login::axum_sessions::async_session::MemoryStore::new();
+    let session_store = SessionStore::new();
     let session_layer = axum_login::axum_sessions::SessionLayer::new(session_store, &secret)
         .with_cookie_name("stream_alerts_session")
         .with_secure(true);
     let auth_layer = axum_login::AuthLayer::new(user_store.clone(), &secret);
     Ok((session_layer, auth_layer, user_store))
 }
+
+//
