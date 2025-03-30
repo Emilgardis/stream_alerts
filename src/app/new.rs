@@ -1,41 +1,41 @@
-use leptos::*;
-use leptos_router::*;
+use leptos::prelude::*;
+use leptos_router::{components::A, *};
 
 pub use crate::alerts::*;
 
-#[component]
+#[component()]
 #[track_caller]
-pub fn NewAlert(cx: Scope) -> impl IntoView {
-    let new_alert = create_server_action::<NewAlert>(cx);
+pub fn NewAlert() -> impl IntoView {
+    let new_alert = ServerAction::<NewAlert>::new();
 
-    view! {cx,
+    view! {
         //<Title text="New Alert"/>
         <h1>"New Alert"</h1>
         <ActionForm action=new_alert>
             <input type="text" name="name" placeholder="Name"/>
             <input type="submit" value="Submit"/>
         </ActionForm>
-        <Show when=move || {new_alert.value().get().is_some()} fallback=|_cx| view!{_cx, ""}>
+        <Show when=move || {new_alert.value().get().is_some()} fallback=|| view!{_ ""}>
             {move || {
                 let value = new_alert.value().get().expect("wtf");
-                view!{ cx,
+                view!{
                     <ErrorBoundary
                     // the fallback receives a signal containing current errors
-                    fallback=|cx, errors| view! { cx,
+                    fallback=| errors| view! {
                         <div class="error">
                             <p>"Couldn't create alert! Error: "</p>
                             // we can render a list of errors as strings, if we'd like
                             <ul>
                                 {move || errors.get()
                                     .into_iter()
-                                    .map(|(_, e)| view! { cx, <li>{e.to_string()}</li>})
-                                    .collect_view(cx)
+                                    .map(|(_, e)| view! {  <li>{e.to_string()}</li>})
+                                    .collect_view()
                                 }
                             </ul>
                         </div>
                     }
                 >
-                {value.map(|id| view! {cx, <A href=move || format!("/alert/{id}/update")>"Alert Created"</A>})}
+                {value.map(|id| view! { <A href=move || format!("/alert/{id}/update")>"Alert Created"</A>})}
                 </ErrorBoundary>
                 }
             }}
@@ -46,9 +46,9 @@ pub fn NewAlert(cx: Scope) -> impl IntoView {
 
 #[server(NewAlert, "/backend")]
 #[tracing::instrument(err)]
-pub async fn new_alert(cx: Scope, name: String) -> Result<AlertId, leptos::ServerFnError> {
-    let Some(manager): Option<AlertManager> = leptos::use_context(cx) else {
-        return Err(leptos::ServerFnError::ServerError("Missing manager".to_owned()));
+pub async fn new_alert(name: String) -> Result<AlertId, ServerFnError> {
+    let Some(manager): Option<AlertManager> = use_context() else {
+        return Err(ServerFnError::ServerError("Missing manager".to_owned()));
     };
 
     let id = AlertId::new_id();
@@ -58,6 +58,3 @@ pub async fn new_alert(cx: Scope, name: String) -> Result<AlertId, leptos::Serve
 
     Ok(id)
 }
-
-#[cfg(feature = "ssr")]
-pub(crate) fn register_server_fns() { _ = NewAlert::register(); }

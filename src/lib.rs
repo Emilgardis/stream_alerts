@@ -35,24 +35,8 @@ cfg_if! { if #[cfg(feature = "hydrate")] {
 
         console_error_panic_hook::set_once();
 
-        leptos::mount_to_body(move |cx| {
-            view! { cx, <App/> }
+        leptos::mount::mount_to_body(move || {
+            view! {  <App/> }
         });
     }
 }}
-
-pub fn try_spawn_local(
-    fut: impl std::future::Future<Output = Result<(), Box<dyn std::error::Error + Send + Sync + 'static>>>
-        + 'static,
-    on_fail: impl std::future::Future<Output = ()> + 'static,
-) {
-    leptos::spawn_local(async move {
-        match fut.await {
-            Ok(_) => (),
-            Err(err) => {
-                tracing::error!(%err, "errored");
-                on_fail.await;
-            }
-        }
-    });
-}

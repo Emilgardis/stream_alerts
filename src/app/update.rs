@@ -1,61 +1,70 @@
 use std::collections::BTreeMap;
 
-use leptos::*;
+use leptos::prelude::*;
 use leptos_meta::*;
-use leptos_router::*;
+use leptos_router::{components::A, *};
 
 pub use super::login::*;
 pub use crate::alerts::*;
 
-#[component]
 #[track_caller]
-pub fn UpdateAlert(cx: Scope) -> impl IntoView {
-    let params = use_params_map(cx);
+#[component()]
+pub fn UpdateAlert() -> impl IntoView {
+    let params = params::ParamsMap::new();
 
-    let alert = create_blocking_resource(
-        cx,
-        move || params.with(|p| p.get("id").cloned().unwrap_or_default().into()),
-        move |id| async move { crate::alerts::read_alert(cx, id).await },
+    let alert = Resource::new_blocking(
+        move || params.get("id").unwrap_or_default().into(),
+        move |id| async move { crate::alerts::read_alert(id).await },
     );
 
-    let update_alert_text = create_server_action::<UpdateAlertText>(cx);
-    let update_alert_name = create_server_action::<UpdateAlertName>(cx);
+    let update_alert_text = ServerAction::<UpdateAlertText>::new();
+    let update_alert_name = ServerAction::<UpdateAlertName>::new();
 
-    view! { cx,
+    view! {
         <div class="">
             <Suspense fallback=move || {
-                view! { cx, <Title text="Update Alert"/><h1>"Update Alert"</h1> }
+                view! {  <Title text="Update Alert"/><h1>"Update Alert"</h1> }
             }>
-            //<Title text=move || alert.read(cx).map(|a| format!("Update Alert {}", a.name)).unwrap()/>
-                <ErrorBoundary fallback=move |cx, _| view!{cx, <LoginRedirect/>}>
+            //<Title text=move || alert.read().map(|a| format!("Update Alert {}", a.name)).unwrap()/>
+                <ErrorBoundary fallback=move | _| view!{ <LoginRedirect/>}>
                 {move || {
-                    alert
-                        .read(cx)
-                        .map(|alert| alert.map(|alert| {
-                            let alert = create_rw_signal(cx, alert);
-                            provide_context(cx, alert);
-                            view! { cx,
-                                <h1>"Update Alert" <ActionForm class="flex-col" action=update_alert_name>
-                                    <AlertIdInput/>
-                                    <input type="text" name="name" class="border-none" value=move|| alert.with(|a| a.name.clone())/>
-                                    <input type="submit" class="border-none" value="Change name"/>
-                                </ActionForm> </h1>
-                                <A href=move || format!("/alert/{}", alert.get().alert_id)>"View"</A>
-                                <ActionForm action=update_alert_text class="bg-white rounded px-8 pt-6 pb-8 mb-4">
-                                    <label for="alert_text">"Update text"</label>
-                                    <textarea id="alert_text" name="text" class="">
-                                        {alert.with(|a| a.last_text.to_string())}
-                                    </textarea>
-                                    <input
-                                        type="submit"
-                                        class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded"
-                                        value="Submit"
-                                    />
-                                    <AlertIdInput/>
-                                </ActionForm>
-                                <AlertFields/>
+                    view! {{
+                        match alert.read().as_ref() {
+                            Some(Ok(alert)) => {
+                                let alert = RwSignal::new(alert.clone());
+                                provide_context(alert);
+                                view! {
+                                    <div class="w-full max-w-xl bg-white shadow rounded-lg p-6">
+                                    <h1>"Update Alert" <div class="flex-col"><ActionForm action=update_alert_name>
+                                        <AlertIdInput/>
+                                        <input type="text" name="name" class="border-none" value=alert.with(|a| a.name.clone())/>
+                                        <input class="hover:underline cursor-pointer border-none" type="submit" value="Change name"/>
+                                    </ActionForm></div> </h1>
+                                    <div class="text-blue-500 hover:text-blue-700 underline text-sm" ><A href=move || format!("/alert/{}", alert.get().alert_id)>"View"</A></div>
+                                    <div class="flex flex-col mb-4"><ActionForm action=update_alert_text >
+                                        <label class="font-semibold text-gray-900" for="alert_text">"Update text"</label>
+                                        <textarea id="alert_text" name="text" class="border-2 border-gray-200 rounded p-2 h-48">
+                                            {alert.with(|a| a.last_text.to_string())}
+                                        </textarea>
+                                        <input
+                                            type="submit"
+                                            class="cursor-pointer border-none bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded"
+                                            value="Submit"
+                                        />
+                                        <AlertIdInput/>
+                                    </ActionForm></div>
+                                    <AlertFields/>
+                                    </div>
+                                }.into_any()
                             }
-                        }))
+                            Some(Err(e)) => view! {
+                                <p class="text-red-500">{format!("Error: {e}")}</p>
+                            }.into_any(),
+                            None => view! {
+                                <p>"Loading..."</p>
+                            }.into_any(),
+                        }
+                    }}
                 }}
                 </ErrorBoundary>
             </Suspense>
@@ -63,32 +72,27 @@ pub fn UpdateAlert(cx: Scope) -> impl IntoView {
     }
 }
 
-#[component]
+#[component()]
 #[track_caller]
-pub fn AlertFields(cx: Scope) -> impl IntoView {
-    let add_field = create_server_action::<AddAlertField>(cx);
-    let delete_field = create_server_action::<DeleteAlertField>(cx);
-    let update_field = create_server_action::<UpdateAlertField>(cx);
-    let alert: RwSignal<Alert> = use_context(cx).unwrap();
-    let fields = create_rw_signal(
-        cx,
+pub fn AlertFields() -> impl IntoView {
+    let add_field = ServerAction::<AddAlertField>::new();
+    let delete_field = ServerAction::<DeleteAlertField>::new();
+    let update_field = ServerAction::<UpdateAlertField>::new();
+    let alert: RwSignal<Alert> = use_context().unwrap();
+    let fields = RwSignal::new(
         alert
             .get()
             .fields
             .into_iter()
-            .map(|(id, field)| (id, create_rw_signal(cx, field)))
+            .map(|(id, field)| (id, RwSignal::new(field)))
             .collect::<BTreeMap<AlertFieldId, _>>(),
     );
-    let delete_field_action = create_action(cx, move |key: &AlertFieldId| {
+    let delete_field_action = Action::new(move |key: &AlertFieldId| {
         let key = key.clone();
-        async move {
-            let cx = cx;
-            delete_alert_field(cx, alert.with_untracked(|a| a.alert_id.clone()), key).await
-        }
+        async move { delete_alert_field(alert.with_untracked(|a| a.alert_id.clone()), key).await }
     });
 
-    let _res = create_local_resource(
-        cx,
+    let _res = Resource::new(
         move || {
             (
                 alert.with(|a| a.alert_id.clone()),
@@ -99,35 +103,38 @@ pub fn AlertFields(cx: Scope) -> impl IntoView {
             )
         },
         move |(id, ..)| async move {
-            let new_fields = crate::alerts::read_alert(cx, id).await.expect("ehm").fields;
-            let cx = cx;
+            let new_fields = crate::alerts::read_alert(id).await.expect("ehm").fields;
             fields.update(|map| {
                 map.retain(|k, _| new_fields.keys().any(|nk| nk == k));
                 for (nk, nv) in new_fields.into_iter() {
                     map.entry(nk)
                         .and_modify(|v| {
                             if nv != v.get_untracked() {
-                                v.set_untracked(nv.clone());
+                                v.set(nv.clone());
                             }
                         })
-                        .or_insert_with(|| create_rw_signal(cx, nv));
+                        .or_insert_with(|| RwSignal::new(nv));
                 }
             })
         },
     );
 
     // list of AlertField's, with keys, using leptos For
-    view! { cx,
-        <div>
+    view! {
+        <div class="flex items-start space-x-4 mb-4" >
             <ActionForm action=add_field>
-                <button type="submit">"Add field"</button>
-                <select name="kind">
+                <AlertIdInput/>
+                <div class="flex flex-col space-y-4 mr-4">
+                <button class="cursor-pointer bg-blue-500 hover:bg-blue-700 text-white font-bold py-1 px-2 rounded text-sm" type="submit">"Add field"</button>
+                <select class = "border border-gray-300 rounded px-4 py-2" name="kind">
                     <option value="text">"text"</option>
                     <option value="counter">"counter"</option>
                 </select>
-                <AlertIdInput/>
-                <input type="text" name="name" placeholder="name"/>
-                <input type="text" name="value" placeholder="value"/>
+                </div>
+                <div class="flex flex-col space-y-4 flex-grow">
+                <input class = "border border-gray-300 rounded px-4 py-2" type="text" name="name" placeholder="name"/>
+                <input class = "border border-gray-300 rounded px-4 py-2" type="text" name="value" placeholder="value"/>
+                </div>
             </ActionForm>
             <ul>
                 <For
@@ -136,12 +143,12 @@ pub fn AlertFields(cx: Scope) -> impl IntoView {
                         fields
                     }
                     key=|value| value.0.clone()
-                    view=move |cx, (name, field)| {
-                        view! { cx,
+                    children=move | (name, field)| {
+                        view! {
                             <li>
                                 <AlertField
                                     id=name.clone()
-                                    on_delete=move |_| { delete_field_action.dispatch(name.clone()) }
+                                    on_delete=move |_| { delete_field_action.dispatch(name.clone()); }
                                     update_action=update_field
                                     field=field
                                 />
@@ -157,60 +164,58 @@ pub fn AlertFields(cx: Scope) -> impl IntoView {
 #[component]
 #[track_caller]
 pub fn AlertField<Delete>(
-    cx: Scope,
     on_delete: Delete,
     id: AlertFieldId,
-    update_action: Action<UpdateAlertField, Result<Alert, ServerFnError>>,
+    update_action: ServerAction<UpdateAlertField>,
     field: RwSignal<(AlertFieldName, AlertField)>,
 ) -> impl IntoView
 where
     Delete: Fn(leptos::ev::MouseEvent) + 'static,
 {
-    view! { cx,
+    view! {
         <div>
-            <button class="rounded border-2 border-red-500" on:click=on_delete>"x"</button>
-            <ActionForm action=update_action>
+        <div class="flex flex-row">
+        <button class="cursor-pointer py-2 rounded border-2 border-red-500 hover:border-red-900" on:click=on_delete>"𐄂"</button>
+
+        <div class="contents"><ActionForm action=update_action>
             <AlertIdInput/>
             <input type="hidden" name="field_id" value=id/>
-            <input type="text" name="field_name" value=move || field.get().0/>
+            <input class="border border-gray-300 rounded px-4 py-2" type="text" name="field_name" value=field.get().0/>
             {move || match field.get().1 {
                 AlertField::Text(value) => {
-                    view! { cx,
-                        <input type="text" name="value" value=value/>
+                    view! {
+                        <input class="border border-gray-300 rounded px-4 py-2" type="text" name="value" value=value/>
                     }.into_any()
                 }
                 AlertField::Counter(value) => {
-                    view! { cx,
-                        <input type="number" name="value" value=value/>
+                    view! {
+                        <input class="border border-gray-300 rounded px-4 py-2" type="number" name="value" value=value/>
                     }.into_any()
                 }
             }}
-            <input type="submit" value="Update"/>
-            </ActionForm>
+            <input class="rounded bg-blue-500 hover:bg-blue-700 text-white" type="submit" value="✓"/>
+        </ActionForm></div>
+        </div>
         </div>
     }
 }
 
 #[component]
-pub fn AlertIdInput(cx: Scope) -> impl IntoView {
-    let alert = use_context::<RwSignal<Alert>>(cx).unwrap();
-    view! { cx,
+pub fn AlertIdInput() -> impl IntoView {
+    let alert = use_context::<RwSignal<Alert>>().unwrap();
+    view! {
         <input
             type="hidden"
             name="alert_id"
-            value=move ||alert.with(|a| a.alert_id.clone())/>
+            value=alert.with(|a| a.alert_id.clone())/>
     }
 }
 
 #[server(UpdateAlertName, "/backend")]
 #[tracing::instrument(err)]
-pub async fn update_alert_name(
-    cx: Scope,
-    alert_id: AlertId,
-    name: String,
-) -> Result<Alert, leptos::ServerFnError> {
-    let Some(manager): Option<AlertManager> = leptos::use_context(cx) else {
-        return Err(leptos::ServerFnError::ServerError("Missing manager".to_owned()));
+pub async fn update_alert_name(alert_id: AlertId, name: String) -> Result<Alert, ServerFnError> {
+    let Some(manager): Option<AlertManager> = use_context() else {
+        return Err(ServerFnError::ServerError("Missing manager".to_owned()));
     };
 
     manager
@@ -226,13 +231,9 @@ pub async fn update_alert_name(
 
 #[server(UpdateAlertText, "/backend")]
 #[tracing::instrument(err)]
-pub async fn update_alert_text(
-    cx: Scope,
-    alert_id: AlertId,
-    text: String,
-) -> Result<Alert, leptos::ServerFnError> {
-    let Some(manager): Option<AlertManager> = leptos::use_context(cx) else {
-        return Err(leptos::ServerFnError::ServerError("Missing manager".to_owned()));
+pub async fn update_alert_text(alert_id: AlertId, text: String) -> Result<Alert, ServerFnError> {
+    let Some(manager): Option<AlertManager> = use_context() else {
+        return Err(ServerFnError::ServerError("Missing manager".to_owned()));
     };
 
     manager
@@ -249,14 +250,13 @@ pub async fn update_alert_text(
 #[server(UpdateAlertField, "/backend")]
 #[tracing::instrument(err)]
 pub async fn update_alert_field(
-    cx: Scope,
     alert_id: AlertId,
     field_name: Option<AlertFieldName>,
     field_id: AlertFieldId,
     value: String,
-) -> Result<Alert, leptos::ServerFnError> {
-    let Some(manager): Option<AlertManager> = leptos::use_context(cx) else {
-        return Err(leptos::ServerFnError::ServerError("Missing manager".to_owned()));
+) -> Result<Alert, ServerFnError> {
+    let Some(manager): Option<AlertManager> = use_context() else {
+        return Err(ServerFnError::ServerError("Missing manager".to_owned()));
     };
 
     manager
@@ -272,7 +272,9 @@ pub async fn update_alert_field(
             Ok(())
         })
         .await
-        .map_err(|e: eyre::Report| leptos::ServerFnError::ServerError(e.to_string()))??;
+        .map_err(|e: eyre::Report| {
+            ServerFnError::<leptos::server_fn::error::NoCustomError>::ServerError(e.to_string())
+        })??;
 
     let map_r = manager.read_alerts().await;
     let alert = map_r.get(&alert_id).expect("no alert found");
@@ -282,12 +284,11 @@ pub async fn update_alert_field(
 #[server(DeleteAlertField, "/backend")]
 #[tracing::instrument(err)]
 pub async fn delete_alert_field(
-    cx: Scope,
     alert_id: AlertId,
     field: AlertFieldId,
-) -> Result<Alert, leptos::ServerFnError> {
-    let Some(manager): Option<AlertManager> = leptos::use_context(cx) else {
-        return Err(leptos::ServerFnError::ServerError("Missing manager".to_owned()));
+) -> Result<Alert, ServerFnError> {
+    let Some(manager): Option<AlertManager> = use_context() else {
+        return Err(ServerFnError::ServerError("Missing manager".to_owned()));
     };
 
     manager
@@ -304,14 +305,13 @@ pub async fn delete_alert_field(
 #[server(AddAlertField, "/backend")]
 #[tracing::instrument(err)]
 pub async fn add_alert_field(
-    cx: Scope,
     alert_id: AlertId,
     name: AlertFieldName,
     kind: String,
     value: String,
-) -> Result<Alert, leptos::ServerFnError> {
-    let Some(manager): Option<AlertManager> = leptos::use_context(cx) else {
-        return Err(leptos::ServerFnError::ServerError("Missing manager".to_owned()));
+) -> Result<Alert, ServerFnError> {
+    let Some(manager): Option<AlertManager> = use_context() else {
+        return Err(ServerFnError::ServerError("Missing manager".to_owned()));
     };
 
     manager
@@ -319,18 +319,11 @@ pub async fn add_alert_field(
             alert.add_alert_field(name, &kind, value)
         })
         .await
-        .map_err(|e| leptos::ServerFnError::ServerError(e.to_string()))??;
+        .map_err(|e| {
+            ServerFnError::<leptos::server_fn::error::NoCustomError>::ServerError(e.to_string())
+        })??;
 
     let map_r = manager.read_alerts().await;
     let alert = map_r.get(&alert_id).expect("no alert found");
     Ok(alert.clone())
-}
-
-#[cfg(feature = "ssr")]
-pub(crate) fn register_server_fns() {
-    _ = UpdateAlertText::register();
-    _ = UpdateAlertName::register();
-    _ = UpdateAlertField::register();
-    _ = DeleteAlertField::register();
-    _ = AddAlertField::register();
 }
