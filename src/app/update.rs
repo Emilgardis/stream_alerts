@@ -13,7 +13,7 @@ pub fn UpdateAlert() -> impl IntoView {
     let params = hooks::use_params_map();
 
     let alert = Resource::new_blocking(
-        move || params.read().get("id").unwrap_or_default().into(),
+        move || params.read_untracked().get("id").unwrap_or_default().into(),
         move |id| async move { crate::alerts::read_alert(id).await },
     );
 
@@ -49,7 +49,7 @@ pub fn UpdateAlert() -> impl IntoView {
                                         </div>
 
                                         <div>
-                                        <ActionForm action=update_alert_name>
+                                        <ActionForm action=update_alert_name on:submit:capture=|e| e.prevent_default()>
                                         <div class="inline-flex items-center gap-2">
                                             <AlertIdInput/>
                                             <input
@@ -75,7 +75,7 @@ pub fn UpdateAlert() -> impl IntoView {
                                         <div class="flex gap-6">
                                             <div class="flex-1 space-y-2">
                                                 <h2 class="text-lg font-medium text-gray-700">"Update Text"</h2>
-                                                <ActionForm action=update_alert_text>
+                                                <ActionForm action=update_alert_text on:submit:capture=|e| e.prevent_default()>
                                                     <label class="block text-sm font-medium text-gray-700" for="alert_text">
                                                         "Text"
                                                     </label>
@@ -98,7 +98,7 @@ pub fn UpdateAlert() -> impl IntoView {
 
                                             <div class="flex-1 space-y-2">
                                                 <h2 class="text-lg font-medium text-gray-700">"Update Style"</h2>
-                                                <ActionForm action=update_alert_style>
+                                                <ActionForm action=update_alert_style on:submit:capture=|e| e.prevent_default()>
                                                     <label class="block text-sm font-medium text-gray-700" for="alert_style">
                                                         "Style"
                                                     </label>
@@ -190,7 +190,7 @@ pub fn AlertFields() -> impl IntoView {
     // list of AlertField's, with keys, using leptos For
     view! {
         <div class="flex items-start space-x-4 mb-4" >
-            <ActionForm action=add_field>
+            <ActionForm action=add_field on:submit:capture=|e| e.prevent_default()>
                 <AlertIdInput/>
                 <div class="flex flex-col space-y-4 mr-4">
                 <button class="cursor-pointer bg-blue-500 hover:bg-blue-700 text-white font-bold py-1 px-2 rounded text-sm" type="submit">"Add field"</button>
@@ -245,7 +245,7 @@ where
         <div class="flex flex-row">
         //<button class="cursor-pointer py-2 rounded border-2 border-red-500 hover:border-red-900" on:click=on_delete>"𐄂"</button>
 
-        <div class="contents"><ActionForm action=update_action>
+        <div class="contents"><ActionForm action=update_action on:submit:capture=|e| e.prevent_default()>
             <AlertIdInput/>
             <input type="hidden" name="field_id" value=id/>
             <input class="border border-gray-300 rounded px-4 py-2" type="text" name="field_name" value={move || field.get().0.to_string()}/>
