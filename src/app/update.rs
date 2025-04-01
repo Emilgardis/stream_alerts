@@ -22,51 +22,105 @@ pub fn UpdateAlert() -> impl IntoView {
     let update_alert_name = ServerAction::<UpdateAlertName>::new();
 
     view! {
-        <div class="">
+        <div class="p-4">
             <Suspense fallback=move || {
-                view! {  <Title text="Update Alert"/><h1>"Update Alert"</h1> }
+                view! {
+                    <Title text="Update Alert"/>
+                    <h1 class="text-2xl font-bold">"Update Alert"</h1>
+                }
             }>
-            //<Title text=move || alert.read().map(|a| format!("Update Alert {}", a.name)).unwrap()/>
-                <ErrorBoundary fallback=move | _| view!{ <LoginRedirect/>}>
-                {move || {
-                    view! {{
+                <ErrorBoundary fallback=move |_| view! { <LoginRedirect/> }>
+                    {move || {
                         match alert.read().as_ref() {
                             Some(Ok(alert)) => {
                                 let alert = RwSignal::new(alert.clone());
                                 provide_context(alert);
+
                                 view! {
-                                    <div class="w-full max-w-xl bg-white shadow rounded-lg p-6">
-                                    <h1>"Update Alert" <div class="flex-col"><ActionForm action=update_alert_name>
-                                        <AlertIdInput/>
-                                        <input type="text" name="name" class="border-none" value=move || alert.with(|a| a.name.to_string())/>
-                                        <input class="hover:underline cursor-pointer border-none" type="submit" value="Change name"/>
-                                    </ActionForm></div> </h1>
-                                    <div class="text-blue-500 hover:text-blue-700 underline text-sm" ><A href=move || format!("/alert/{}", alert.get().alert_id)>"View"</A></div>
-                                    <div class="flex flex-col mb-4"><ActionForm action=update_alert_text >
-                                        <label class="font-semibold text-gray-900" for="alert_text">"Update text"</label>
-                                        <textarea id="alert_text" name="text" class="border-2 border-gray-200 rounded p-2 h-48">
-                                            {move || alert.with(|a| a.last_text.to_string())}
-                                        </textarea>
-                                        <input
-                                            type="submit"
-                                            class="cursor-pointer border-none bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded"
-                                            value="Submit"
-                                        />
-                                        <AlertIdInput/>
-                                    </ActionForm></div>
-                                    <div class="flex flex-col mb-4"><ActionForm action=update_alert_style >
-                                        <label class="font-semibold text-gray-900" for="alert_text">"Update style"</label>
-                                        <textarea id="alert_style" name="style" class="border-2 border-gray-200 rounded p-2 h-48">
-                                            {move || alert.with(|a| a.last_style.to_string())}
-                                        </textarea>
-                                        <input
-                                            type="submit"
-                                            class="cursor-pointer border-none bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded"
-                                            value="Submit"
-                                        />
-                                        <AlertIdInput/>
-                                    </ActionForm></div>
-                                    <AlertFields/>
+                                    <div class="w-full max-w-4xl bg-white shadow rounded-xl p-8 space-y-6">
+
+                                        <div class="flex items-center justify-between">
+                                            <h1 class="text-2xl font-semibold">"Update Alert"</h1>
+                                            <div class="text-blue-600 hover:underline text-sm">
+                                                <A href=move || format!("/alert/{}", alert.get().alert_id)>
+                                                    "View"
+                                                </A>
+                                            </div>
+                                        </div>
+
+                                        <div>
+                                        <ActionForm action=update_alert_name>
+                                        <div class="inline-flex items-center gap-2">
+                                            <AlertIdInput/>
+                                            <input
+                                                type="text"
+                                                name="name"
+                                                /* make it large, borderless, so it looks like a title */
+                                                class="text-2xl font-semibold bg-transparent border-b border-transparent
+                                                       focus:outline-none focus:border-blue-300
+                                                       p-0 text-gray-800
+                                                       transition-colors duration-200"
+                                                value=move || alert.with(|a| a.name.to_string())
+                                            />
+                                            <input
+                                                type="submit"
+                                                value="edit name"
+                                                class="text-sm cursor-pointer bg-blue-600 px-3 py-1 rounded text-white hover:bg-blue-700
+                                                       focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                            />
+                                        </div>
+                                    </ActionForm>
+                                        </div>
+
+                                        <div class="flex gap-6">
+                                            <div class="flex-1 space-y-2">
+                                                <h2 class="text-lg font-medium text-gray-700">"Update Text"</h2>
+                                                <ActionForm action=update_alert_text>
+                                                    <label class="block text-sm font-medium text-gray-700" for="alert_text">
+                                                        "Text"
+                                                    </label>
+                                                    <textarea
+                                                        id="alert_text"
+                                                        name="text"
+                                                        rows="20"
+                                                        class="w-full resize-y rounded-lg border border-gray-300 bg-gray-50 p-3 text-sm text-gray-900 focus:border-blue-500 focus:ring-blue-500"
+                                                    >
+                                                        {move || alert.with(|a| a.last_text.to_string())}
+                                                    </textarea>
+                                                    <input
+                                                        type="submit"
+                                                        value="Submit"
+                                                        class="mt-2 inline-flex cursor-pointer items-center justify-center rounded bg-blue-600 px-4 py-2 text-white hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                                    />
+                                                    <AlertIdInput/>
+                                                </ActionForm>
+                                            </div>
+
+                                            <div class="flex-1 space-y-2">
+                                                <h2 class="text-lg font-medium text-gray-700">"Update Style"</h2>
+                                                <ActionForm action=update_alert_style>
+                                                    <label class="block text-sm font-medium text-gray-700" for="alert_style">
+                                                        "Style"
+                                                    </label>
+                                                    <textarea
+                                                        id="alert_style"
+                                                        name="style"
+                                                        rows="20"
+                                                        class="w-full resize-y rounded-lg border border-gray-300 bg-gray-50 p-3 text-sm text-gray-900 focus:border-blue-500 focus:ring-blue-500"
+                                                    >
+                                                        {move || alert.with(|a| a.last_style.to_string())}
+                                                    </textarea>
+                                                    <input
+                                                        type="submit"
+                                                        value="Submit"
+                                                        class="mt-2 inline-flex cursor-pointer items-center justify-center rounded bg-blue-600 px-4 py-2 text-white hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                                    />
+                                                    <AlertIdInput/>
+                                                </ActionForm>
+                                            </div>
+                                        </div>
+
+                                        <AlertFields/>
                                     </div>
                                 }.into_any()
                             }
@@ -78,12 +132,13 @@ pub fn UpdateAlert() -> impl IntoView {
                             }.into_any(),
                         }
                     }}
-                }}
                 </ErrorBoundary>
             </Suspense>
         </div>
     }
 }
+
+
 
 #[component()]
 #[track_caller]

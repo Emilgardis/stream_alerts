@@ -72,9 +72,10 @@ impl AlertManager {
         let _ = self
             .sender
             .send(AlertMessage::new_message(alert_id.clone(), alert.render()));
-        let _ = self
-            .sender
-            .send(AlertMessage::new_style(alert_id.clone(), alert.render_style()));
+        let _ = self.sender.send(AlertMessage::new_style(
+            alert_id.clone(),
+            alert.render_style(),
+        ));
         tracing::info!(count = self.sender.receiver_count(), "updated alert.");
 
         alert.save_alert(&self.db_path).await.expect("oops");
@@ -101,7 +102,14 @@ impl AlertManager {
 #[server(ReadAlert, "/backend")]
 #[tracing::instrument(err)]
 pub async fn read_alert(alert: AlertId) -> Result<Alert, ServerFnError> {
-    let alerts = expect_context::<crate::alerts::AlertManager>();
+    let Some(alerts): Option<AlertManager> = use_context() else {
+        tracing::info!("manager not found!");
+        return Err(
+            ServerFnError::<leptos::server_fn::error::NoCustomError>::ServerError(
+                "Missing manager".to_owned(),
+            ),
+        );
+    };
 
     // do some server-only work here to access the database
     let alerts = alerts.alerts.read().await;
@@ -168,6 +176,7 @@ struct AlertSite {
     alert_name: AlertName,
     last_text: AlertMarkdown,
     cache_bust: String,
+    style: String,
 }
 
 #[derive(Template)]
@@ -183,7 +192,12 @@ impl NotFound {
 }
 
 impl AlertSite {
-    pub fn new(alert_id: AlertId, alert_name: AlertName, last_text: AlertMarkdown) -> Self {
+    pub fn new(
+        alert_id: AlertId,
+        alert_name: AlertName,
+        last_text: AlertMarkdown,
+        style: String,
+    ) -> Self {
         Self {
             alert_id,
             alert_name,
@@ -193,6 +207,7 @@ impl AlertSite {
                 .take(7)
                 .map(char::from)
                 .collect(),
+            style,
         }
     }
 }
@@ -215,9 +230,14 @@ async fn serve_alert(
         }
     };
     axum::response::Html(
-        AlertSite::new(alert_id, alert.name.clone(), alert.render())
-            .render()
-            .unwrap_or_default(),
+        AlertSite::new(
+            alert_id,
+            alert.name.clone(),
+            alert.render(),
+            alert.render_style(),
+        )
+        .render()
+        .unwrap_or_default(),
     )
 }
 
@@ -769,7 +789,7 @@ impl AlertMessage {
         Self::MessageMarkdown { alert_id, text }
     }
     pub fn new_style(alert_id: AlertId, style: String) -> Self {
-        Self::Style { alert_id, style}
+        Self::Style { alert_id, style }
     }
 
     #[cfg(feature = "ssr")]

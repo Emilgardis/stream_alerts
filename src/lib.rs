@@ -35,8 +35,6 @@ cfg_if! { if #[cfg(feature = "hydrate")] {
 
         console_error_panic_hook::set_once();
 
-        leptos::mount::mount_to_body(move || {
-            view! {  <App/> }
-        });
+        leptos::mount::mount_to_body(move || {});
     }
 }}
