@@ -168,7 +168,7 @@ pub async fn setup(
     let session_store = SessionStore::default();
     let session_layer = axum_login::tower_sessions::SessionManagerLayer::new(session_store)
         .with_secure(true)
-        .with_name("session_id");
+        .with_name("stream_alerts_session");
 
     // Auth service.
     let auth_layer = axum_login::AuthManagerLayerBuilder::new(user_store, session_layer).build();

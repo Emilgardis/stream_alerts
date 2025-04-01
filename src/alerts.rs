@@ -1,13 +1,10 @@
 use askama::Template;
 
 #[cfg(feature = "ssr")]
-use axum::http::StatusCode;
+use axum::{extract, http::StatusCode};
 #[cfg(feature = "ssr")]
 use axum::{
-    extract::{
-        self,
-        ws::{self, WebSocket},
-    },
+    extract::ws::{self, WebSocket},
     response::IntoResponse,
     routing::get,
     Extension,
@@ -75,6 +72,9 @@ impl AlertManager {
         let _ = self
             .sender
             .send(AlertMessage::new_message(alert_id.clone(), alert.render()));
+        let _ = self
+            .sender
+            .send(AlertMessage::new_style(alert_id.clone(), alert.render_style()));
         tracing::info!(count = self.sender.receiver_count(), "updated alert.");
 
         alert.save_alert(&self.db_path).await.expect("oops");
@@ -101,15 +101,11 @@ impl AlertManager {
 #[server(ReadAlert, "/backend")]
 #[tracing::instrument(err)]
 pub async fn read_alert(alert: AlertId) -> Result<Alert, ServerFnError> {
+    let alerts = expect_context::<crate::alerts::AlertManager>();
+
     // do some server-only work here to access the database
-    let Some(alerts): Option<AlertManager> = use_context() else {
-        return Err(
-            ServerFnError::<leptos::server_fn::error::NoCustomError>::ServerError(
-                "Missing manager".to_owned(),
-            ),
-        );
-    };
     let alerts = alerts.alerts.read().await;
+    tracing::info!("alert_id = {alert}, alerts: {alerts:?}");
     Ok(alerts
         .get(&alert)
         .ok_or_else(|| {
@@ -281,7 +277,7 @@ async fn update_alert_field(
 #[axum::debug_handler]
 pub(crate) async fn handler(
     ws: ws::WebSocketUpgrade,
-    extract::State(broadcast): extract::State<broadcast::Sender<AlertMessage> > ,
+    extract::State(broadcast): extract::State<broadcast::Sender<AlertMessage>>,
     extract::Path(alert_id): extract::Path<AlertId>,
     Extension(manager): Extension<AlertManager>,
 ) -> impl IntoResponse {
@@ -392,6 +388,10 @@ pub enum AlertMessage {
     Update {
         alert_id: AlertId,
     },
+    Style {
+        alert_id: AlertId,
+        style: String,
+    },
 }
 
 fn alert_ser<S: serde::Serializer>(alert: &AlertMarkdown, ser: S) -> Result<S::Ok, S::Error> {
@@ -423,6 +423,8 @@ impl AlertMessageRecv {
 pub struct Alert {
     pub alert_id: AlertId,
     pub last_text: AlertText,
+    #[serde(default)]
+    pub last_style: String,
     pub name: AlertName,
     #[serde(default)]
     pub fields: BTreeMap<AlertFieldId, (AlertFieldName, AlertField)>,
@@ -521,6 +523,7 @@ impl Alert {
         Self {
             alert_id,
             last_text,
+            last_style: String::new(),
             name,
             fields: BTreeMap::new(),
         }
@@ -535,6 +538,16 @@ impl Alert {
         text = text.replace("$$", "$");
 
         AlertMarkdown::from(text)
+    }
+    pub fn render_style(&self) -> String {
+        tracing::info!("and i op style");
+        let mut text = self.last_style.to_string();
+        for (name, value) in self.fields.values() {
+            text = text.replace(&format!("${name}"), &value.to_string());
+        }
+        text = text.replace("$$", "$");
+
+        text
     }
 
     fn update_field(
@@ -748,11 +761,15 @@ impl AlertMessage {
         match self {
             AlertMessage::Update { alert_id } => alert_id,
             AlertMessage::MessageMarkdown { alert_id, .. } => alert_id,
+            AlertMessage::Style { alert_id, .. } => alert_id,
         }
     }
 
     pub fn new_message(alert_id: AlertId, text: AlertMarkdown) -> Self {
         Self::MessageMarkdown { alert_id, text }
+    }
+    pub fn new_style(alert_id: AlertId, style: String) -> Self {
+        Self::Style { alert_id, style}
     }
 
     #[cfg(feature = "ssr")]

@@ -10,14 +10,15 @@ pub use crate::alerts::*;
 #[track_caller]
 #[component()]
 pub fn UpdateAlert() -> impl IntoView {
-    let params = params::ParamsMap::new();
+    let params = hooks::use_params_map();
 
     let alert = Resource::new_blocking(
-        move || params.get("id").unwrap_or_default().into(),
+        move || params.read().get("id").unwrap_or_default().into(),
         move |id| async move { crate::alerts::read_alert(id).await },
     );
 
     let update_alert_text = ServerAction::<UpdateAlertText>::new();
+    let update_alert_style = ServerAction::<UpdateAlertStyle>::new();
     let update_alert_name = ServerAction::<UpdateAlertName>::new();
 
     view! {
@@ -37,14 +38,26 @@ pub fn UpdateAlert() -> impl IntoView {
                                     <div class="w-full max-w-xl bg-white shadow rounded-lg p-6">
                                     <h1>"Update Alert" <div class="flex-col"><ActionForm action=update_alert_name>
                                         <AlertIdInput/>
-                                        <input type="text" name="name" class="border-none" value=alert.with(|a| a.name.clone())/>
+                                        <input type="text" name="name" class="border-none" value=move || alert.with(|a| a.name.to_string())/>
                                         <input class="hover:underline cursor-pointer border-none" type="submit" value="Change name"/>
                                     </ActionForm></div> </h1>
                                     <div class="text-blue-500 hover:text-blue-700 underline text-sm" ><A href=move || format!("/alert/{}", alert.get().alert_id)>"View"</A></div>
                                     <div class="flex flex-col mb-4"><ActionForm action=update_alert_text >
                                         <label class="font-semibold text-gray-900" for="alert_text">"Update text"</label>
                                         <textarea id="alert_text" name="text" class="border-2 border-gray-200 rounded p-2 h-48">
-                                            {alert.with(|a| a.last_text.to_string())}
+                                            {move || alert.with(|a| a.last_text.to_string())}
+                                        </textarea>
+                                        <input
+                                            type="submit"
+                                            class="cursor-pointer border-none bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded"
+                                            value="Submit"
+                                        />
+                                        <AlertIdInput/>
+                                    </ActionForm></div>
+                                    <div class="flex flex-col mb-4"><ActionForm action=update_alert_style >
+                                        <label class="font-semibold text-gray-900" for="alert_text">"Update style"</label>
+                                        <textarea id="alert_style" name="style" class="border-2 border-gray-200 rounded p-2 h-48">
+                                            {move || alert.with(|a| a.last_style.to_string())}
                                         </textarea>
                                         <input
                                             type="submit"
@@ -81,7 +94,7 @@ pub fn AlertFields() -> impl IntoView {
     let alert: RwSignal<Alert> = use_context().unwrap();
     let fields = RwSignal::new(
         alert
-            .get()
+            .get_untracked()
             .fields
             .into_iter()
             .map(|(id, field)| (id, RwSignal::new(field)))
@@ -175,12 +188,12 @@ where
     view! {
         <div>
         <div class="flex flex-row">
-        <button class="cursor-pointer py-2 rounded border-2 border-red-500 hover:border-red-900" on:click=on_delete>"𐄂"</button>
+        //<button class="cursor-pointer py-2 rounded border-2 border-red-500 hover:border-red-900" on:click=on_delete>"𐄂"</button>
 
         <div class="contents"><ActionForm action=update_action>
             <AlertIdInput/>
             <input type="hidden" name="field_id" value=id/>
-            <input class="border border-gray-300 rounded px-4 py-2" type="text" name="field_name" value=field.get().0/>
+            <input class="border border-gray-300 rounded px-4 py-2" type="text" name="field_name" value={move || field.get().0.to_string()}/>
             {move || match field.get().1 {
                 AlertField::Text(value) => {
                     view! {
@@ -207,7 +220,7 @@ pub fn AlertIdInput() -> impl IntoView {
         <input
             type="hidden"
             name="alert_id"
-            value=alert.with(|a| a.alert_id.clone())/>
+            value={ move || alert.with(|a| a.alert_id.to_string())}/>
     }
 }
 
@@ -239,6 +252,24 @@ pub async fn update_alert_text(alert_id: AlertId, text: String) -> Result<Alert,
     manager
         .edit_alert(&alert_id, move |alert| {
             alert.last_text = text.into();
+        })
+        .await?;
+
+    let map_r = manager.read_alerts().await;
+    let alert = map_r.get(&alert_id).expect("no alert found");
+    Ok(alert.clone())
+}
+
+#[server(UpdateAlertStyle, "/backend")]
+#[tracing::instrument(err)]
+pub async fn update_alert_style(alert_id: AlertId, style: String) -> Result<Alert, ServerFnError> {
+    let Some(manager): Option<AlertManager> = use_context() else {
+        return Err(ServerFnError::ServerError("Missing manager".to_owned()));
+    };
+
+    manager
+        .edit_alert(&alert_id, move |alert| {
+            alert.last_style = style.into();
         })
         .await?;
 
@@ -290,6 +321,7 @@ pub async fn delete_alert_field(
     let Some(manager): Option<AlertManager> = use_context() else {
         return Err(ServerFnError::ServerError("Missing manager".to_owned()));
     };
+    tracing::info!(?alert_id, ?field, "deleted field");
 
     manager
         .edit_alert(&alert_id, move |alert| {

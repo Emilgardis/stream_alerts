@@ -13,6 +13,14 @@ use leptos_meta::*;
 use leptos_router::components::{Route, Router, Routes};
 use leptos_router::*;
 
+#[cfg(feature = "ssr")]
+#[derive(Clone, axum::extract::FromRef)]
+pub struct AppState {
+    pub leptos_options: LeptosOptions,
+    pub alert_manager: new::AlertManager,
+}
+
+
 use crate::auth::User;
 
 #[component()]
@@ -20,8 +28,6 @@ use crate::auth::User;
 pub fn App() -> impl IntoView {
     // Provides context that manages stylesheets, titles, meta tags, etc.
     provide_meta_context();
-
-    let user = RwSignal::new(None);
 
     view! {
         <Stylesheet id="leptos" href="/pkg/site.css"/>
@@ -46,7 +52,7 @@ pub fn App() -> impl IntoView {
                     />
                     <Route ssr=SsrMode::OutOfOrder
                         path=path!("/login")
-                        view=move || view! { <Login user=user/> }
+                        view=move || view! { <Login/> }
                     />
                 </Routes>
             </div>

@@ -21,6 +21,7 @@ async fn main() -> Result<(), eyre::Report> {
     async fn leptos_handler(
         auth: stream_alerts::auth::AuthSession,
         Extension(manager): Extension<stream_alerts::alerts::AlertManager>,
+        extract::State(appstate): extract::State<AppState>,
         //user: Option<Extension<stream_alerts::auth::User>>,
         req: axum::http::Request<axum::body::Body>,
     ) -> axum::response::Response {
@@ -29,6 +30,8 @@ async fn main() -> Result<(), eyre::Report> {
         let span = tracing::info_span!("leptos", auth.current_user = ?auth.user);
         let span_c = span.clone();
         let span_c2 = span.clone();
+        let options = appstate.leptos_options.clone();
+        let appstate = appstate.clone();
         let handler = leptos_axum::render_app_async_with_context(
             move || {
                 let _s = span_c.enter();
@@ -38,10 +41,24 @@ async fn main() -> Result<(), eyre::Report> {
                     provide_context::<stream_alerts::alerts::AlertManager>(manager.clone());
                 }
                 provide_context::<stream_alerts::auth::AuthSession>(auth.clone());
+                provide_context::<AppState>(appstate.clone());
             },
             move || {
+                let options = options.clone();
                 let _s = span_c2.enter();
-                view! { <App/> }
+                view! { <!DOCTYPE html>
+                    <html lang="en">
+                        <head>
+                            <meta charset="utf-8"/>
+                            <meta name="viewport" content="width=device-width, initial-scale=1"/>
+                            <AutoReload options=options.clone() />
+                            <HydrationScripts options/>
+                            <leptos_meta::MetaTags/>
+                        </head>
+                        <body>
+                            <App/>
+                        </body>
+                    </html> }
             },
         );
         tracing::Instrument::instrument(handler(req), span)
@@ -64,16 +81,13 @@ async fn main() -> Result<(), eyre::Report> {
     let (alert_router, manager) = stream_alerts::alerts::setup(&opts).await?;
 
     let auth_layer = stream_alerts::auth::setup(&opts).await?;
-    #[derive(Clone, axum::extract::FromRef)]
-    pub struct AppState {
-        pub leptos_options: LeptosOptions,
-        pub alert_manager: new::AlertManager,
-    }
 
     let app_state = AppState {
         leptos_options: leptos_options.clone(),
         alert_manager: manager.clone(),
     };
+
+    let app_state2 = app_state.clone();
 
     // build our application with a route
     let app: Router<_> = Router::new()
@@ -83,12 +97,11 @@ async fn main() -> Result<(), eyre::Report> {
             post(
                 move |
                       Extension(manager): Extension<stream_alerts::alerts::AlertManager>,
-                      Extension(user_store): Extension<stream_alerts::auth::Users>,
                       auth: stream_alerts::auth::AuthSession,
                       path: axum::extract::Path<String>,
                       req| {
                     use axum::response::IntoResponse;
-
+                    let app_state = app_state2.clone();
                     let span =
                         tracing::info_span!("server_fn", server_fn = path.0, auth.user = ?auth.user, ?auth);
                     tracing::Instrument::instrument(
@@ -114,8 +127,8 @@ async fn main() -> Result<(), eyre::Report> {
                                     provide_context::<stream_alerts::auth::AuthSession>(
                                         auth.clone(),
                                     );
-                                    provide_context::<stream_alerts::auth::Users>(
-                                        user_store.clone(),
+                                    provide_context::<stream_alerts::app::AppState>(
+                                        app_state.clone(),
                                     );
                                 },
                                 req,

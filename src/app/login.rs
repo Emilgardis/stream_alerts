@@ -8,11 +8,11 @@ pub use crate::alerts::*;
 
 #[component]
 #[track_caller]
-pub fn Login(user: RwSignal<Option<crate::auth::User>>) -> impl IntoView {
+pub fn Login() -> impl IntoView {
     let login = ServerAction::<LoginUser>::new();
-    let query = params::ParamsMap::new();
+    let query = hooks::use_params_map();
     let redirect = move || {
-        query
+        query.read()
             .get("redirect")
             .map(|s| s.to_owned())
             .unwrap_or_else(|| "/alert".to_owned())
@@ -27,7 +27,8 @@ pub fn Login(user: RwSignal<Option<crate::auth::User>>) -> impl IntoView {
             <input type="submit" value="Submit"/>
         </ActionForm>
         <ErrorBoundary fallback=|errors| {view!{{format!("Nice try\n{:?}", errors.get().iter().next().map(|e| e.1.to_string()).unwrap_or_default())}}}>
-        {move || login.value().get().map(|res| res.map(|_| view!(  <p>"Logged in!"</p><Redirect path=redirect()/>)))}
+        {move || login.value().get().map(|res| res.map(|_| view!(  <p>"Logged in!"</p><Redirect path=redirect()/>))
+        )}
         </ErrorBoundary>
     }
 }
@@ -38,18 +39,16 @@ pub fn LoginRedirect() -> impl IntoView {
 }
 #[server(LoginUser, "/backend/public")]
 #[tracing::instrument(err)]
-pub async fn login(
-    username: String,
-    password: String,
-) -> Result<bool, ServerFnError> {
-    let users = use_context::<crate::auth::Users>().expect("wtf");
+pub async fn login(username: String, password: String) -> Result<bool, ServerFnError> {
     let mut auth = use_context::<crate::auth::AuthSession>().expect("wtf");
 
     let res_options_outer = use_context::<leptos_axum::ResponseOptions>();
     tracing::info!("got login request");
     if let Some(res_options) = res_options_outer {
-
-        let Some(user) = auth.authenticate((username, password.as_bytes().to_vec())).await? else {
+        let Some(user) = auth
+            .authenticate((username, password.as_bytes().to_vec()))
+            .await?
+        else {
             tracing::info!("user not found");
             return Err(
                 ServerFnError::<leptos::server_fn::error::NoCustomError>::ServerError(
@@ -58,6 +57,8 @@ pub async fn login(
             );
         };
 
+        auth.login(&user).await?;
+        provide_context::<crate::auth::User>(user.clone());
         tracing::info!(?user, "logged in");
 
         Ok(true)

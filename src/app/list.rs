@@ -10,13 +10,12 @@ pub use crate::alerts::*;
 #[component]
 #[track_caller]
 pub fn ListAlerts() -> impl IntoView {
-    let params = params::ParamsMap::new();
+    let params = hooks::use_params_map();
 
     let alerts = Resource::new_blocking(
         move || (),
         move |_| async move { crate::alerts::read_all_alerts().await },
     );
-    let read = alerts.read();
 
     view! {
 
@@ -25,7 +24,7 @@ pub fn ListAlerts() -> impl IntoView {
         <ErrorBoundary fallback=move |e| {
             view!{<LoginRedirect/>}}>
         { move || {
-            match read.clone() {
+            match alerts.read().clone() {
                 Some(Ok(alerts)) => view! {
                     <ul class="bg-white shadow rounded-lg p-4">
                     <For each=move || alerts.clone()
