@@ -20,7 +20,7 @@ pub fn ListAlerts() -> impl IntoView {
     view! {
 
         <p class="font-bold text-lg mb-4 text-center">"Alerts"</p>
-        //<Suspense fallback=move || view!{<p>"loading"</p>}>
+        <Suspense fallback=move || view!{<p>"loading"</p>}>
         <ErrorBoundary fallback=move |e| {
             view!{<LoginRedirect/>}}>
         { move || {
@@ -45,7 +45,7 @@ pub fn ListAlerts() -> impl IntoView {
             }
         }}
         </ErrorBoundary>
-        //</Suspense>
+        </Suspense>
     }
 }
 
