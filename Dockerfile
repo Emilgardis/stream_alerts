@@ -10,7 +10,7 @@ ARG CARGO_REGISTRIES_CRATES_IO_PROTOCOL=sparse
 RUN rustup target add wasm32-unknown-unknown
 RUN --mount=type=cache,target=/usr/local/cargo/git \
     --mount=type=cache,target=/usr/local/cargo/registry \
-    cargo install cargo-leptos --locked --git https://github.com/leptos-rs/cargo-leptos --rev 34dd942
+    cargo install cargo-leptos
 COPY . .
 RUN --mount=type=cache,target=/usr/local/cargo/git \
     --mount=type=cache,target=/usr/local/cargo/registry \
