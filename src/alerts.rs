@@ -68,14 +68,19 @@ impl AlertManager {
         let Some(alert) = map_w.get_mut(alert_id) else {
             return Ok(Err(ServerFnError::ServerError("no such alert".to_owned())));
         };
+        let old = alert.clone();
         f(alert)?;
-        let _ = self
-            .sender
-            .send(AlertMessage::new_message(alert_id.clone(), alert.render()));
-        let _ = self.sender.send(AlertMessage::new_style(
-            alert_id.clone(),
-            alert.render_style(),
-        ));
+        if old.last_text != alert.last_text {
+            let _ = self
+                .sender
+                .send(AlertMessage::new_message(alert_id.clone(), alert.render()));
+        }
+        if old.last_style != alert.last_style {
+            let _ = self.sender.send(AlertMessage::new_style(
+                alert_id.clone(),
+                alert.render_style(),
+            ));
+        }
         tracing::info!(count = self.sender.receiver_count(), "updated alert.");
 
         alert.save_alert(&self.db_path).await.expect("oops");
