@@ -1,46 +1,51 @@
 use std::collections::BTreeMap;
 
-use leptos::*;
+use leptos::prelude::*;
 use leptos_meta::*;
-use leptos_router::*;
+use leptos_router::{components::A, *};
 
 pub use super::login::*;
 pub use crate::alerts::*;
 
 #[component]
 #[track_caller]
-pub fn ListAlerts(cx: Scope) -> impl IntoView {
-    let params = use_params_map(cx);
+pub fn ListAlerts() -> impl IntoView {
+    let params = hooks::use_params_map();
 
-    let alerts = create_blocking_resource(
-        cx,
+    let alerts = Resource::new_blocking(
         move || (),
-        move |_| async move { crate::alerts::read_all_alerts(cx).await },
+        move |_| async move { crate::alerts::read_all_alerts().await },
     );
 
-    view! {cx,
-        <p>"Alerts"</p>
-        <Suspense fallback=move || view!{cx, <p>"loading"</p>}>
-        <ErrorBoundary fallback=move |cx, e| {
-            view!{cx, <LoginRedirect/>}}>
-        { move || alerts.read(cx).ok_or(ServerFnError::ServerError("not logged in?".to_owned())).and_then(move |res| {
-            res.map( move |alerts|
-                view! {cx,
-                    <ul class="">
+    view! {
+
+        <p class="font-bold text-lg mb-4 text-center">"Alerts"</p>
+        <Suspense fallback=move || view!{<p>"loading"</p>}>
+        <ErrorBoundary fallback=move |e| {
+            view!{<LoginRedirect/>}}>
+        { move || {
+            match alerts.read().clone() {
+                Some(Ok(alerts)) => view! {
+                    <ul class="bg-white shadow rounded-lg p-4">
                     <For each=move || alerts.clone()
                          key=|a| a.0.clone()
-                         view=|cx, a| {
-                             view! {cx,
-                                 <li>
-                                 <A class="hover:text-blue-400 hover:underline" href=move || format!("{}/update", a.0)>{a.1.name}</A>
+                         children=|a| {
+                             view! {
+                                 <li class="border-b border-gray-200 py-2">
+                                 <div class="text-gray-700 hover:text-blue-400 hover:underline"><A href=move || format!("{}/update", a.0)>{a.1.name}</A></div>
                                  </li>
                              }
                          }
                     />
                     </ul>
-                })
-        } ) }
+                }.into_any(),
+                _ => view! {
+                    <LoginRedirect/>
+                }.into_any(),
+            }
+        }}
         </ErrorBoundary>
         </Suspense>
     }
 }
+

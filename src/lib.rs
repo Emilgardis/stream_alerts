@@ -19,8 +19,6 @@ cfg_if! { if #[cfg(feature = "hydrate")] {
 
     #[wasm_bindgen]
     pub fn hydrate() {
-        // initializes logging using the `log` crate
-
         tracing_subscriber::fmt()
             .with_max_level(tracing::Level::TRACE)
             .without_time()
@@ -35,24 +33,6 @@ cfg_if! { if #[cfg(feature = "hydrate")] {
 
         console_error_panic_hook::set_once();
 
-        leptos::mount_to_body(move |cx| {
-            view! { cx, <App/> }
-        });
+        leptos::mount::hydrate_body(App);
     }
 }}
-
-pub fn try_spawn_local(
-    fut: impl std::future::Future<Output = Result<(), Box<dyn std::error::Error + Send + Sync + 'static>>>
-        + 'static,
-    on_fail: impl std::future::Future<Output = ()> + 'static,
-) {
-    leptos::spawn_local(async move {
-        match fut.await {
-            Ok(_) => (),
-            Err(err) => {
-                tracing::error!(%err, "errored");
-                on_fail.await;
-            }
-        }
-    });
-}

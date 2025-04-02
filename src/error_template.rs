@@ -1,6 +1,6 @@
 use cfg_if::cfg_if;
 use http::status::StatusCode;
-use leptos::*;
+use leptos::prelude::*;
 use thiserror::Error;
 
 #[cfg(feature = "ssr")]
@@ -25,14 +25,13 @@ impl AppError {
 #[component]
 #[track_caller]
 pub fn ErrorTemplate(
-    cx: Scope,
     #[prop(optional)] outside_errors: Option<Errors>,
     #[prop(optional)] errors: Option<RwSignal<Errors>>,
 ) -> impl IntoView {
-    let _span = tracing::info_span!("error", id = ?cx.id());
+    let _span = tracing::info_span!("error");
 
     let errors = match outside_errors {
-        Some(e) => create_rw_signal(cx, e),
+        Some(e) => RwSignal::new(e),
         None => match errors {
             Some(e) => e,
             None => panic!("No Errors found and we expected errors!"),
@@ -51,21 +50,21 @@ pub fn ErrorTemplate(
     // Only the response code for the first error is actually sent from the server
     // this may be customized by the specific application
     cfg_if! { if #[cfg(feature="ssr")] {
-        let response = use_context::<ResponseOptions>(cx);
+        let response = use_context::<ResponseOptions>();
         if let Some(response) = response {
             response.set_status(errors[0].status_code());
         }
     }}
 
-    view! { cx,
+    view! {
         <h1>{if errors.len() > 1 { "Errors" } else { "Error" }}</h1>
         <For
             each=move || { errors.clone().into_iter().enumerate() }
             key=|(index, _error)| *index
-            view=move |cx, error| {
-                let error_string = error.1.to_string();
-                let error_code = error.1.status_code();
-                view! { cx,
+            children=move |(_index, error)| {
+                let error_string = error.to_string();
+                let error_code = error.status_code();
+                view! {
                     <h2>{error_code.to_string()}</h2>
                     <p>"Error: " {error_string}</p>
                 }

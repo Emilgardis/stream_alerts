@@ -1,10 +1,10 @@
 use askama::Template;
+
+#[cfg(feature = "ssr")]
+use axum::{extract, http::StatusCode};
 #[cfg(feature = "ssr")]
 use axum::{
-    extract::{
-        self,
-        ws::{self, WebSocket},
-    },
+    extract::ws::{self, WebSocket},
     response::IntoResponse,
     routing::get,
     Extension,
@@ -12,15 +12,12 @@ use axum::{
 use eyre::Context;
 use futures::{
     stream::{SplitSink, SplitStream},
-    SinkExt, StreamExt,
+    StreamExt,
 };
-#[cfg(feature = "ssr")]
-use hyper::StatusCode;
-use leptos::{server, Scope};
+use leptos::{prelude::*, server};
 use rand::Rng;
 use std::{
     collections::{BTreeMap, HashMap},
-    error::Error,
     path::Path,
     sync::Arc,
 };
@@ -30,8 +27,6 @@ use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     sync::{broadcast, RwLock},
 };
-
-use leptos::*;
 
 use crate::opts::Opts;
 
@@ -71,12 +66,21 @@ impl AlertManager {
     ) -> Result<Result<(), leptos::server_fn::ServerFnError>, E> {
         let mut map_w = self.alerts.write().await;
         let Some(alert) = map_w.get_mut(alert_id) else {
-            return Ok(Err(leptos::ServerFnError::ServerError("no such alert".to_owned())));
+            return Ok(Err(ServerFnError::ServerError("no such alert".to_owned())));
         };
+        let old = alert.clone();
         f(alert)?;
-        let _ = self
-            .sender
-            .send(AlertMessage::new_message(alert_id.clone(), alert.render()));
+        if old.last_text != alert.last_text {
+            let _ = self
+                .sender
+                .send(AlertMessage::new_message(alert_id.clone(), alert.render()));
+        }
+        if old.last_style != alert.last_style {
+            let _ = self.sender.send(AlertMessage::new_style(
+                alert_id.clone(),
+                alert.render_style(),
+            ));
+        }
         tracing::info!(count = self.sender.receiver_count(), "updated alert.");
 
         alert.save_alert(&self.db_path).await.expect("oops");
@@ -102,56 +106,72 @@ impl AlertManager {
 
 #[server(ReadAlert, "/backend")]
 #[tracing::instrument(err)]
-pub async fn read_alert(cx: Scope, alert: AlertId) -> Result<Alert, leptos::ServerFnError> {
-    // do some server-only work here to access the database
-    let Some(alerts): Option<AlertManager> = leptos::use_context(cx) else {
-        return Err(leptos::ServerFnError::ServerError("Missing manager".to_owned()));
+pub async fn read_alert(alert: AlertId) -> Result<Alert, ServerFnError> {
+    let Some(alerts): Option<AlertManager> = use_context() else {
+        tracing::info!("manager not found!");
+        return Err(
+            ServerFnError::<leptos::server_fn::error::NoCustomError>::ServerError(
+                "Missing manager".to_owned(),
+            ),
+        );
     };
+
+    // do some server-only work here to access the database
     let alerts = alerts.alerts.read().await;
+    tracing::info!("alert_id = {alert}, alerts: {alerts:?}");
     Ok(alerts
         .get(&alert)
-        .ok_or_else(|| leptos::ServerFnError::ServerError("alert not found".to_owned()))?
+        .ok_or_else(|| {
+            ServerFnError::<leptos::server_fn::error::NoCustomError>::ServerError(
+                "alert not found".to_owned(),
+            )
+        })?
         .clone())
 }
 
 #[server(ReadAllAlerts, "/backend")]
 #[tracing::instrument(err)]
-pub async fn read_all_alerts(cx: Scope) -> Result<Vec<(AlertId, Alert)>, leptos::ServerFnError> {
+pub async fn read_all_alerts() -> Result<Vec<(AlertId, Alert)>, ServerFnError> {
     // do some server-only work here to access the database
-    let Some(alerts): Option<AlertManager> = leptos::use_context(cx) else {
+    let Some(alerts): Option<AlertManager> = use_context() else {
         tracing::info!("manager not found!");
-        return Err(leptos::ServerFnError::ServerError("Missing manager".to_owned()));
+        return Err(
+            ServerFnError::<leptos::server_fn::error::NoCustomError>::ServerError(
+                "Missing manager".to_owned(),
+            ),
+        );
     };
     let alerts = alerts.alerts.read().await;
     Ok(alerts.clone().into_iter().collect())
 }
 
 #[cfg(feature = "ssr")]
-pub async fn setup(opts: &Opts) -> Result<(axum::Router, AlertManager), eyre::Report> {
+pub async fn setup<S>(opts: &Opts) -> Result<(axum::Router<S>, AlertManager), eyre::Report> {
+    use axum::{
+        extract::{Path, State, WebSocketUpgrade},
+        response::IntoResponse,
+        routing::get,
+        Router,
+    };
+
     let (sender, _) = broadcast::channel(16);
     let map = Arc::new(RwLock::new(HashMap::<AlertId, Alert>::new()));
     read_alerts(&map, opts.db_path.clone()).await?;
+
     let manager = AlertManager {
-        alerts: map,
+        alerts: map.clone(),
         sender: sender.clone(),
         db_path: opts.db_path.clone(),
     };
-    Ok((
-        axum::Router::new()
-            //.route("/new", get(new_alert))
-            //.route("/new", post(new_alert_post))
-            .route(
-                "/ws/:id",
-                get({
-                    let sender = sender.clone();
-                    move |ws, id, map| handler(ws, sender, id, map)
-                }),
-            )
-            .route("/:id", get(serve_alert))
-            .route("/:id/update/:field", get(update_alert_field))
-            .layer(Extension(manager.clone())),
-        manager,
-    ))
+
+    let app = Router::new()
+        .route("/ws/:id", get(handler))
+        .route("/:id", get(serve_alert))
+        .route("/:id/update/:field", get(update_alert_field))
+        .with_state(sender.clone())
+        .with_state(map.clone());
+
+    Ok((app, manager))
 }
 
 #[derive(Template)]
@@ -161,6 +181,7 @@ struct AlertSite {
     alert_name: AlertName,
     last_text: AlertMarkdown,
     cache_bust: String,
+    style: String,
 }
 
 #[derive(Template)]
@@ -170,11 +191,18 @@ struct NotFound {
 }
 
 impl NotFound {
-    fn new(id: String) -> Self { Self { id } }
+    fn new(id: String) -> Self {
+        Self { id }
+    }
 }
 
 impl AlertSite {
-    pub fn new(alert_id: AlertId, alert_name: AlertName, last_text: AlertMarkdown) -> Self {
+    pub fn new(
+        alert_id: AlertId,
+        alert_name: AlertName,
+        last_text: AlertMarkdown,
+        style: String,
+    ) -> Self {
         Self {
             alert_id,
             alert_name,
@@ -184,6 +212,7 @@ impl AlertSite {
                 .take(7)
                 .map(char::from)
                 .collect(),
+            style,
         }
     }
 }
@@ -192,16 +221,29 @@ impl AlertSite {
 async fn serve_alert(
     extract::Path(alert_id): extract::Path<AlertId>,
     Extension(manager): Extension<AlertManager>,
-) -> axum::response::Response {
+) -> impl axum::response::IntoResponse {
     let alert: Alert = {
         if let Some(alert) = manager.read_alerts().await.get(&alert_id) {
             alert.clone()
         } else {
             // TODO: rdirect to leptos 404
-            return NotFound::new(alert_id.to_string()).into_response();
+            return axum::response::Html(
+                NotFound::new(alert_id.to_string())
+                    .render()
+                    .unwrap_or_default(),
+            );
         }
     };
-    AlertSite::new(alert_id, alert.name.clone(), alert.render()).into_response()
+    axum::response::Html(
+        AlertSite::new(
+            alert_id,
+            alert.name.clone(),
+            alert.render(),
+            alert.render_style(),
+        )
+        .render()
+        .unwrap_or_default(),
+    )
 }
 
 #[cfg(feature = "ssr")]
@@ -257,9 +299,10 @@ async fn update_alert_field(
 }
 
 #[cfg(feature = "ssr")]
+#[axum::debug_handler]
 pub(crate) async fn handler(
     ws: ws::WebSocketUpgrade,
-    broadcast: broadcast::Sender<AlertMessage>,
+    extract::State(broadcast): extract::State<broadcast::Sender<AlertMessage>>,
     extract::Path(alert_id): extract::Path<AlertId>,
     Extension(manager): Extension<AlertManager>,
 ) -> impl IntoResponse {
@@ -332,6 +375,10 @@ async fn write(
     mut broadcast: broadcast::Receiver<AlertMessage>,
     alert_id: AlertId,
 ) -> Result<(), eyre::Report> {
+    use std::error::Error as _;
+
+    use futures::SinkExt as _;
+
     loop {
         let msg = broadcast.recv().await?;
         // Check if alert id matches
@@ -366,6 +413,10 @@ pub enum AlertMessage {
     Update {
         alert_id: AlertId,
     },
+    Style {
+        alert_id: AlertId,
+        style: String,
+    },
 }
 
 fn alert_ser<S: serde::Serializer>(alert: &AlertMarkdown, ser: S) -> Result<S::Ok, S::Error> {
@@ -397,6 +448,8 @@ impl AlertMessageRecv {
 pub struct Alert {
     pub alert_id: AlertId,
     pub last_text: AlertText,
+    #[serde(default)]
+    pub last_style: String,
     pub name: AlertName,
     #[serde(default)]
     pub fields: BTreeMap<AlertFieldId, (AlertFieldName, AlertField)>,
@@ -409,7 +462,9 @@ pub enum AlertField {
 }
 
 impl Default for AlertField {
-    fn default() -> Self { Self::Text(String::new()) }
+    fn default() -> Self {
+        Self::Text(String::new())
+    }
 }
 
 impl AlertField {
@@ -493,6 +548,7 @@ impl Alert {
         Self {
             alert_id,
             last_text,
+            last_style: String::new(),
             name,
             fields: BTreeMap::new(),
         }
@@ -507,6 +563,16 @@ impl Alert {
         text = text.replace("$$", "$");
 
         AlertMarkdown::from(text)
+    }
+    pub fn render_style(&self) -> String {
+        tracing::info!("and i op style");
+        let mut text = self.last_style.to_string();
+        for (name, value) in self.fields.values() {
+            text = text.replace(&format!("${name}"), &value.to_string());
+        }
+        text = text.replace("$$", "$");
+
+        text
     }
 
     fn update_field(
@@ -603,23 +669,66 @@ impl Alert {
 
 macro_rules! attr_type {
     ($attr_type:ty) => {
-        impl IntoAttribute for $attr_type {
-            fn into_attribute(self, _: Scope) -> Attribute {
-                Attribute::String(self.to_string().into())
+        impl leptos::attr::IntoAttributeValue for $attr_type {
+            type Output = String;
+            fn into_attribute_value(self) -> Self::Output {
+                self.to_string().into_attribute_value()
             }
+        }
+        impl<'a> AddAnyAttr for $attr_type {
+            type Output<SomeNewAttr: leptos::tachys::html::attribute::Attribute> = String;
 
-            #[inline]
-            fn into_attribute_boxed(self: Box<Self>, cx: Scope) -> Attribute {
-                self.into_attribute(cx)
+            fn add_any_attr<NewAttr: leptos::tachys::html::attribute::Attribute>(
+                self,
+                _attr: NewAttr,
+            ) -> Self::Output<NewAttr> {
+                self.to_string()
+            }
+        }
+
+        impl Render for $attr_type {
+            type State = leptos::tachys::view::strings::StringState;
+
+            fn build(self) -> Self::State {
+                self.to_string().build()
+            }
+            fn rebuild(self, state: &mut Self::State) {
+                self.to_string().rebuild(state)
+            }
+        }
+        impl RenderHtml for $attr_type {
+            type AsyncOutput = String;
+            const MIN_LENGTH: usize = 0;
+            fn dry_resolve(&mut self) {
+                // no-op
+            }
+            async fn resolve(self) -> String {
+                self.to_string()
+            }
+            fn to_html_with_buf(
+                self,
+                buf: &mut String,
+                position: &mut leptos::tachys::view::Position,
+                escape: bool,
+                mark_branches: bool,
+            ) {
+                <&str as RenderHtml>::to_html_with_buf(
+                    self.as_str(),
+                    buf,
+                    position,
+                    escape,
+                    mark_branches,
+                )
+            }
+            fn hydrate<const FROM_SERVER: bool>(
+                self,
+                cursor: &leptos::tachys::hydration::Cursor,
+                position: &leptos::tachys::view::PositionState,
+            ) -> Self::State {
+                self.to_string().hydrate::<FROM_SERVER>(cursor, position)
             }
         }
     };
-}
-
-impl leptos::IntoView for AlertName {
-    fn into_view(self, cx: Scope) -> View {
-        self.to_string().into_view(cx)
-    }
 }
 
 #[aliri_braid::braid(serde)]
@@ -627,7 +736,9 @@ pub struct AlertId;
 attr_type!(AlertId);
 
 impl AlertId {
-    pub fn new_id() -> Self { Self(nanoid::nanoid!()) }
+    pub fn new_id() -> Self {
+        Self(nanoid::nanoid!())
+    }
 }
 
 #[aliri_braid::braid(serde)]
@@ -650,11 +761,15 @@ pub struct AlertFieldId;
 attr_type!(AlertFieldId);
 
 impl Default for AlertFieldId {
-    fn default() -> Self { Self::new_id() }
+    fn default() -> Self {
+        Self::new_id()
+    }
 }
 
 impl AlertFieldId {
-    pub fn new_id() -> Self { Self(nanoid::nanoid!(4)) }
+    pub fn new_id() -> Self {
+        Self(nanoid::nanoid!(4))
+    }
 }
 
 impl AlertMarkdownRef {
@@ -671,11 +786,15 @@ impl AlertMessage {
         match self {
             AlertMessage::Update { alert_id } => alert_id,
             AlertMessage::MessageMarkdown { alert_id, .. } => alert_id,
+            AlertMessage::Style { alert_id, .. } => alert_id,
         }
     }
 
     pub fn new_message(alert_id: AlertId, text: AlertMarkdown) -> Self {
         Self::MessageMarkdown { alert_id, text }
+    }
+    pub fn new_style(alert_id: AlertId, style: String) -> Self {
+        Self::Style { alert_id, style }
     }
 
     #[cfg(feature = "ssr")]

@@ -8,54 +8,55 @@ use login::*;
 use new::*;
 use update::*;
 
-use leptos::*;
+use leptos::prelude::*;
 use leptos_meta::*;
+use leptos_router::components::{Route, Router, Routes};
 use leptos_router::*;
+
+#[cfg(feature = "ssr")]
+#[derive(Clone, axum::extract::FromRef)]
+pub struct AppState {
+    pub leptos_options: LeptosOptions,
+    pub alert_manager: new::AlertManager,
+}
+
 
 use crate::auth::User;
 
-#[component]
+#[component()]
 #[track_caller]
-pub fn App(cx: Scope) -> impl IntoView {
+pub fn App() -> impl IntoView {
     // Provides context that manages stylesheets, titles, meta tags, etc.
-    provide_meta_context(cx);
+    provide_meta_context();
 
-    let user = create_rw_signal::<Option<User>>(cx, None);
-
-    view! { cx,
+    view! {
         <Stylesheet id="leptos" href="/pkg/site.css"/>
         //<Title text="Welcome to Leptos"/>
         <Router >
-            <main>
-                <Routes>
+            <main class="flex items-center justify-center min-h-screen p-6 bg-gray-50">
+            <div class="w-full max-w-xl">
+                <Routes
+                fallback=|| view! { <p>"Loading..."</p> }
+                >
                     <Route
-                        path="/alert"
-                        view=|cx| view!{cx, <ListAlerts/>}
+                        path=path!("/alert")
+                        view=|| view!{<ListAlerts/>}
                     />
                     <Route ssr=SsrMode::OutOfOrder
-                        path="/alert/:id/update"
-                        view=|cx| view! { cx, <UpdateAlert/> }
+                        path=path!("/alert/:id/update")
+                        view=|| view! { <UpdateAlert/> }
                     />
                     <Route ssr=SsrMode::OutOfOrder
-                        path="/alert/new"
-                        view=|cx| view! { cx, <NewAlert/> }
+                        path=path!("/alert/new")
+                        view=|| view! { <NewAlert/> }
                     />
                     <Route ssr=SsrMode::OutOfOrder
-                        path="/login"
-                        view=move |cx| view! { cx, <Login user=user/> }
+                        path=path!("/login")
+                        view=move || view! { <Login/> }
                     />
                 </Routes>
+            </div>
             </main>
         </Router>
     }
-}
-
-#[cfg(feature = "ssr")]
-pub fn register_server_fns() {
-    tracing::info!("registering server fns");
-    update::register_server_fns();
-    new::register_server_fns();
-    login::register_server_fns();
-    _ = super::alerts::ReadAlert::register();
-    _ = super::alerts::ReadAllAlerts::register();
 }

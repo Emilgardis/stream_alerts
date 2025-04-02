@@ -9,7 +9,9 @@ use crate::opts::Opts;
 pub const COOKIE_AUTH_USER_LOGIN: &str = "user_login";
 
 #[cfg(feature = "ssr")]
-pub type AuthContext = axum_login::extractors::AuthContext<i64, User, Users, Role>;
+pub type AuthContext = axum_login::AuthManager<User, SessionStore>;
+#[cfg(feature = "ssr")]
+pub type AuthSession = axum_login::AuthSession<Users>;
 
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct User {
@@ -106,40 +108,47 @@ impl Users {
 
 #[cfg(feature = "ssr")]
 #[async_trait::async_trait]
-impl axum_login::UserStore<i64, Role> for Users {
+impl axum_login::AuthnBackend for Users {
     type User = User;
+    type Credentials = (String, Vec<u8>);
+    type Error = std::convert::Infallible;
 
-    async fn load_user(&self, user_id: &i64) -> Result<Option<Self::User>, eyre::Report> {
+    async fn get_user(
+        &self,
+        user_id: &axum_login::UserId<Self>,
+    ) -> Result<Option<Self::User>, Self::Error> {
         Ok(self.users.read().await.get(user_id).cloned())
     }
-}
 
-#[cfg(feature = "ssr")]
-impl axum_login::AuthUser<i64, Role> for User {
-    fn get_id(&self) -> i64 { self.id }
-
-    fn get_password_hash(&self) -> axum_login::secrecy::SecretVec<u8> {
-        tracing::info!("getting password hash");
-        axum_login::secrecy::SecretVec::new(self.password().hash.unwrap().as_bytes().to_vec())
+    async fn authenticate(
+        &self,
+        (user, password): Self::Credentials,
+    ) -> Result<Option<Self::User>, Self::Error> {
+        Ok(self.get(&user, password.as_slice()).await)
     }
 }
 
-#[cfg(not(debug_assertions))]
 #[cfg(feature = "ssr")]
-pub type SessionStore = axum_login::axum_sessions::async_session::MemoryStore;
-#[cfg(debug_assertions)]
+impl axum_login::AuthUser for User {
+    type Id = i64;
+
+    fn id(&self) -> Self::Id {
+        self.id
+    }
+
+    fn session_auth_hash(&self) -> &[u8] {
+        self.password_hash.as_bytes()
+    }
+}
+
 #[cfg(feature = "ssr")]
-pub type SessionStore = axum_login::axum_sessions::async_session::CookieStore;
+pub type SessionStore = axum_login::tower_sessions::MemoryStore;
 
 #[cfg(feature = "ssr")]
 pub async fn setup(
     opts: &Opts,
 ) -> Result<
-    (
-        axum_login::axum_sessions::SessionLayer<SessionStore>,
-        axum_login::AuthLayer<Users, i64, User, Role>,
-        Users,
-    ),
+    axum_login::AuthManagerLayer<Users, SessionStore>,
     eyre::Report,
 > {
     use rand::Rng;
@@ -155,14 +164,15 @@ pub async fn setup(
         )?,
     );
 
-    let secret = RNG.lock().unwrap().gen::<[u8; 64]>();
+    // Session layer.
+    let session_store = SessionStore::default();
+    let session_layer = axum_login::tower_sessions::SessionManagerLayer::new(session_store)
+        .with_secure(true)
+        .with_name("stream_alerts_session");
 
-    let session_store = SessionStore::new();
-    let session_layer = axum_login::axum_sessions::SessionLayer::new(session_store, &secret)
-        .with_cookie_name("stream_alerts_session")
-        .with_secure(true);
-    let auth_layer = axum_login::AuthLayer::new(user_store.clone(), &secret);
-    Ok((session_layer, auth_layer, user_store))
+    // Auth service.
+    let auth_layer = axum_login::AuthManagerLayerBuilder::new(user_store, session_layer).build();
+    Ok(auth_layer)
 }
 
 //

@@ -34,6 +34,10 @@
             console.log("got message as markdown", data);
             document.getElementById("text").innerHTML = data.text;
           }
+          if (data.type === "style") {
+            console.log("got style", data);
+            document.getElementById("dynamic-style").textContent = data.style;
+          }
         };
         ws.onerror = function (event) {
           console.error("error", event);
@@ -56,6 +60,7 @@
       }
       connect();
     </script>
+    <style id="dynamic-style">{{style}}</style>
   </head>
   <body>
     <!--Render the text-->
