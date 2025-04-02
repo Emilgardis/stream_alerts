@@ -8,9 +8,7 @@ ARG CARGO_REGISTRIES_CRATES_IO_PROTOCOL=sparse
 #    tar -xvf /tmp/cargo-binstall.tgz -C /usr/local/cargo/bin && \
 #    rm /tmp/cargo-binstall.tgz
 RUN rustup target add wasm32-unknown-unknown
-RUN --mount=type=cache,target=/usr/local/cargo/git \
-    --mount=type=cache,target=/usr/local/cargo/registry \
-    cargo install cargo-leptos
+RUN curl --proto '=https' --tlsv1.2 -LsSf https://github.com/leptos-rs/cargo-leptos/releases/download/v0.2.32/cargo-leptos-installer.sh | sh
 COPY . .
 RUN --mount=type=cache,target=/usr/local/cargo/git \
     --mount=type=cache,target=/usr/local/cargo/registry \
