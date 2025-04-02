@@ -33,10 +33,6 @@ pub fn Login() -> impl IntoView {
     }
 }
 
-#[component]
-pub fn LoginRedirect() -> impl IntoView {
-    view! {<p>"Access Denied!"</p><A href=move || format!("/login?redirect={}", location_pathname().unwrap_or_default())>"Login?"</A>}
-}
 #[server(LoginUser, "/backend/public")]
 #[tracing::instrument(err)]
 pub async fn login(username: String, password: String) -> Result<bool, ServerFnError> {
@@ -60,7 +56,8 @@ pub async fn login(username: String, password: String) -> Result<bool, ServerFnE
         auth.login(&user).await?;
         provide_context::<crate::auth::User>(user.clone());
         tracing::info!(?user, "logged in");
-
+        // TODO: respect ?redirect= query param
+        leptos_axum::redirect("/alert");
         Ok(true)
     } else {
         Err(ServerFnError::ServerError("Oops!".to_owned()))

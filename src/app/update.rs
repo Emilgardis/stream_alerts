@@ -29,7 +29,7 @@ pub fn UpdateAlert() -> impl IntoView {
                     <h1 class="text-2xl font-bold">"Update Alert"</h1>
                 }
             }>
-                <ErrorBoundary fallback=move |_| view! { <LoginRedirect/> }>
+                <ErrorBoundary fallback=move |e| view! { <p>{move || format!("error: {e:?}")}</p> }>
                     {move || {
                         match alert.read().as_ref() {
                             Some(Ok(alert)) => {

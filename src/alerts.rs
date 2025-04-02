@@ -105,7 +105,6 @@ impl AlertManager {
 }
 
 #[server(ReadAlert, "/backend")]
-#[tracing::instrument(err)]
 pub async fn read_alert(alert: AlertId) -> Result<Alert, ServerFnError> {
     let Some(alerts): Option<AlertManager> = use_context() else {
         tracing::info!("manager not found!");
@@ -118,7 +117,6 @@ pub async fn read_alert(alert: AlertId) -> Result<Alert, ServerFnError> {
 
     // do some server-only work here to access the database
     let alerts = alerts.alerts.read().await;
-    tracing::info!("alert_id = {alert}, alerts: {alerts:?}");
     Ok(alerts
         .get(&alert)
         .ok_or_else(|| {
@@ -130,8 +128,16 @@ pub async fn read_alert(alert: AlertId) -> Result<Alert, ServerFnError> {
 }
 
 #[server(ReadAllAlerts, "/backend")]
-#[tracing::instrument(err)]
 pub async fn read_all_alerts() -> Result<Vec<(AlertId, Alert)>, ServerFnError> {
+    let auth = leptos_axum::extract::<crate::auth::AuthSession>().await?;
+    if auth.user.is_none() {
+        leptos_axum::redirect("/login");
+        return Err(
+            ServerFnError::<leptos::server_fn::error::NoCustomError>::ServerError(
+                "Unauthorized".to_owned(),
+            ),
+        );
+    }
     // do some server-only work here to access the database
     let Some(alerts): Option<AlertManager> = use_context() else {
         tracing::info!("manager not found!");

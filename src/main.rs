@@ -35,11 +35,9 @@ async fn main() -> Result<(), eyre::Report> {
         let handler = leptos_axum::render_app_async_with_context(
             move || {
                 let _s = span_c.enter();
-                tracing::info!("providing context");
+                tracing::trace!("providing context");
                 //provide_context( auth_session.clone());
-                if auth.user.is_some() {
-                    provide_context::<stream_alerts::alerts::AlertManager>(manager.clone());
-                }
+                provide_context::<stream_alerts::alerts::AlertManager>(manager.clone());
                 provide_context::<stream_alerts::auth::AuthSession>(auth.clone());
                 provide_context::<AppState>(appstate.clone());
             },
@@ -47,18 +45,18 @@ async fn main() -> Result<(), eyre::Report> {
                 let options = options.clone();
                 let _s = span_c2.enter();
                 view! { <!DOCTYPE html>
-                    <html lang="en">
-                        <head>
-                            <meta charset="utf-8"/>
-                            <meta name="viewport" content="width=device-width, initial-scale=1"/>
-                            <AutoReload options=options.clone() />
-                            <HydrationScripts options/>
-                            <leptos_meta::MetaTags/>
-                        </head>
-                        <body>
-                            <App/>
-                        </body>
-                    </html> }
+                <html lang="en">
+                    <head>
+                        <meta charset="utf-8"/>
+                        <meta name="viewport" content="width=device-width, initial-scale=1"/>
+                        <AutoReload options=options.clone() />
+                        <HydrationScripts options/>
+                        <leptos_meta::MetaTags/>
+                    </head>
+                    <body>
+                        <App/>
+                    </body>
+                </html> }
             },
         );
         tracing::Instrument::instrument(handler(req), span)
@@ -103,7 +101,7 @@ async fn main() -> Result<(), eyre::Report> {
                     use axum::response::IntoResponse;
                     let app_state = app_state2.clone();
                     let span =
-                        tracing::info_span!("server_fn", server_fn = path.0, auth.user = ?auth.user, ?auth);
+                        tracing::info_span!("server_fn", server_fn = path.0, auth.user = ?auth.user.as_ref().map(|u| &u.name));
                     tracing::Instrument::instrument(
                         async move {
                             if auth.user.is_none() && !path.0.contains("public/") {

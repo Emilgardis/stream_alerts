@@ -21,8 +21,6 @@ pub fn ListAlerts() -> impl IntoView {
 
         <p class="font-bold text-lg mb-4 text-center">"Alerts"</p>
         <Suspense fallback=move || view!{<p>"loading"</p>}>
-        <ErrorBoundary fallback=move |e| {
-            view!{<LoginRedirect/>}}>
         { move || {
             match alerts.read().clone() {
                 Some(Ok(alerts)) => view! {
@@ -40,12 +38,9 @@ pub fn ListAlerts() -> impl IntoView {
                     </ul>
                 }.into_any(),
                 _ => view! {
-                    <LoginRedirect/>
                 }.into_any(),
             }
         }}
-        </ErrorBoundary>
         </Suspense>
     }
 }
-
