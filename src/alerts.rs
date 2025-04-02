@@ -70,12 +70,12 @@ impl AlertManager {
         };
         let old = alert.clone();
         f(alert)?;
-        if old.last_text != alert.last_text {
+        if old.render() != alert.render() {
             let _ = self
                 .sender
                 .send(AlertMessage::new_message(alert_id.clone(), alert.render()));
         }
-        if old.last_style != alert.last_style {
+        if old.render_style() != alert.render_style() {
             let _ = self.sender.send(AlertMessage::new_style(
                 alert_id.clone(),
                 alert.render_style(),
