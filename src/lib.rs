@@ -19,8 +19,6 @@ cfg_if! { if #[cfg(feature = "hydrate")] {
 
     #[wasm_bindgen]
     pub fn hydrate() {
-        // initializes logging using the `log` crate
-
         tracing_subscriber::fmt()
             .with_max_level(tracing::Level::TRACE)
             .without_time()
@@ -35,6 +33,6 @@ cfg_if! { if #[cfg(feature = "hydrate")] {
 
         console_error_panic_hook::set_once();
 
-        leptos::mount::mount_to_body(move || {});
+        leptos::mount::hydrate_body(App);
     }
 }}
