@@ -15,12 +15,12 @@ COPY . .
 RUN --mount=type=cache,target=/usr/local/cargo/git \
     --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/app/target \
-    cargo -V; cargo leptos -V; cargo leptos build --release && cp -r /app/target/server/ /app/ && cp -r /app/target/site /app/
+    cargo -V; cargo leptos -V; cargo leptos build --release && cp -r /app/target/release/ /app/ && cp -r /app/target/site /app/
 FROM debian:bullseye-slim as runtime
 WORKDIR /app
 ARG RUN_DEPS
 RUN apt-get update && apt-get install -y ${RUN_DEPS}
-COPY --from=builder /app/server/release/stream_alerts /app/stream_alerts
+COPY --from=builder /app/front/release/stream_alerts /app/stream_alerts
 COPY --from=builder /app/site /app/site
 ENV LEPTOS_SITE_ADDR="0.0.0.0:3000" \
     APP_ENVIRONMENT="production" \
