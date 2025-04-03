@@ -18,7 +18,7 @@ pub fn ListAlerts() -> impl IntoView {
     );
 
     view! {
-
+        <div class="w-full max-w-xl">
         <p class="font-bold text-lg mb-4 text-center">"Alerts"</p>
         <Suspense fallback=move || view!{<p>"loading"</p>}>
         { move || {
@@ -42,5 +42,6 @@ pub fn ListAlerts() -> impl IntoView {
             }
         }}
         </Suspense>
+        </div>
     }
 }

@@ -13,7 +13,7 @@ COPY . .
 RUN --mount=type=cache,target=/usr/local/cargo/git \
     --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/app/target \
-    cargo -V; cargo leptos -V; cargo leptos build --release && cp -r /app/target/release/ /app/ && cp -r /app/target/site /app/
+    cargo -V; cargo leptos -V; cargo leptos build && cargo leptos build --release -vv && cp -r /app/target/release/ /app/ && cp -r /app/target/site /app/
 FROM debian:bullseye-slim as runtime
 WORKDIR /app
 ARG RUN_DEPS
