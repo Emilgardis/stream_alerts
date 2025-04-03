@@ -33,8 +33,7 @@ pub fn App() -> impl IntoView {
         <Stylesheet id="leptos" href="/pkg/site.css"/>
         //<Title text="Welcome to Leptos"/>
         <Router >
-            <main class="flex items-center justify-center min-h-screen p-6 bg-gray-50">
-            <div class="w-full max-w-xl">
+            <main class="flex items-center justify-center">
                 <Routes
                 fallback=|| view! { <p>"Loading..."</p> }
                 >
@@ -55,7 +54,6 @@ pub fn App() -> impl IntoView {
                         view=move || view! { <Login/> }
                     />
                 </Routes>
-            </div>
             </main>
         </Router>
     }

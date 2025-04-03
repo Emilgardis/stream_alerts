@@ -19,6 +19,7 @@ pub fn Login() -> impl IntoView {
     };
 
     view! {
+        <div class="w-full max-w-xl">
         //<Title text="New Alert"/>
         <h1>"Login"</h1>
         <ActionForm action=login>
@@ -30,6 +31,7 @@ pub fn Login() -> impl IntoView {
         {move || login.value().get().map(|res| res.map(|_| view!(  <p>"Logged in!"</p><Redirect path=redirect()/>))
         )}
         </ErrorBoundary>
+        </div>
     }
 }
 
