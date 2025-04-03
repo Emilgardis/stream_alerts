@@ -3,6 +3,7 @@ use std::collections::BTreeMap;
 use leptos::prelude::*;
 use leptos_meta::*;
 use leptos_router::{components::A, *};
+use reactive_stores::{Field, Store, StoreField};
 
 pub use super::login::*;
 pub use crate::alerts::*;
@@ -11,271 +12,157 @@ pub use crate::alerts::*;
 #[component()]
 pub fn UpdateAlert() -> impl IntoView {
     let params = hooks::use_params_map();
+    let alert_id = params.read_untracked().get("id").expect("no id").to_owned();
+    let store = Store::<Alert>::new(Alert {
+        alert_id: alert_id.clone().into(),
+        name: "loading...".into(),
+        last_text: "".into(),
+        last_style: "".into(),
+        fields: Vec::new(),
+    });
 
-    let alert = Resource::new_blocking(
-        move || params.read_untracked().get("id").unwrap_or_default().into(),
-        move |id| async move { crate::alerts::read_alert(id).await },
+    let _r = Resource::new(
+        move || params.read().get("id").expect("no id"),
+        move |id| async move {
+            let alert = read_alert(store.alert_id().get_untracked())
+                .await
+                .expect("no alert found");
+            *store.write() = alert;
+        },
     );
 
-    let update_alert_text = ServerAction::<UpdateAlertText>::new();
-    let update_alert_style = ServerAction::<UpdateAlertStyle>::new();
+    view! {
+        <ErrorBoundary fallback=move |e| view! { <p>{move || format!("error: {e:?}")}</p> }>
+        <div class="mx-auto flex max-w-4xl flex-col gap-6 p-6">
+             <AlertName store/>
+             <AlertTextInputs store/>
+             <AlertFieldInputs store/>
+        </div>
+        </ErrorBoundary>
+    }
+}
+
+async fn provide_store(store: Store<Alert>) {}
+
+#[component]
+pub fn AlertName(store: Store<Alert>) -> impl IntoView {
     let update_alert_name = ServerAction::<UpdateAlertName>::new();
 
     view! {
-        <div class="p-4">
-            <Suspense fallback=move || {
-                view! {
-                    <Title text="Update Alert"/>
-                    <h1 class="text-2xl font-bold">"Update Alert"</h1>
-                }
-            }>
-                <ErrorBoundary fallback=move |e| view! { <p>{move || format!("error: {e:?}")}</p> }>
-                    {move || {
-                        match alert.read().as_ref() {
-                            Some(Ok(alert)) => {
-                                let alert = RwSignal::new(alert.clone());
-                                provide_context(alert);
-
-                                view! {
-                                    <div class="w-full max-w-4xl bg-white shadow rounded-xl p-8 space-y-6">
-
-                                        <div class="flex items-center justify-between">
-                                            <h1 class="text-2xl font-semibold">"Update Alert"</h1>
-                                            <div class="text-blue-600 hover:underline text-sm">
-                                                <A href=move || format!("/alert/{}", alert.get().alert_id)>
-                                                    "View"
-                                                </A>
-                                            </div>
-                                        </div>
-
-                                        <div>
-                                        <ActionForm action=update_alert_name>
-                                        <div class="inline-flex items-center gap-2">
-                                            <AlertIdInput/>
-                                            <input
-                                                type="text"
-                                                name="name"
-                                                /* make it large, borderless, so it looks like a title */
-                                                class="text-2xl font-semibold bg-transparent border-b border-transparent
-                                                       focus:outline-none focus:border-blue-300
-                                                       p-0 text-gray-800
-                                                       transition-colors duration-200"
-                                                value=move || alert.with(|a| a.name.to_string())
-                                            />
-                                            <input
-                                                type="submit"
-                                                value="edit name"
-                                                class="text-sm cursor-pointer bg-blue-600 px-3 py-1 rounded text-white hover:bg-blue-700
-                                                       focus:outline-none focus:ring-2 focus:ring-blue-500"
-                                            />
-                                        </div>
-                                    </ActionForm>
-                                        </div>
-
-                                        <div class="flex gap-6">
-                                            <div class="flex-1 space-y-2">
-                                                <h2 class="text-lg font-medium text-gray-700">"Update Text"</h2>
-                                                <ActionForm action=update_alert_text>
-                                                    <label class="block text-sm font-medium text-gray-700" for="alert_text">
-                                                        "Text"
-                                                    </label>
-                                                    <textarea
-                                                        id="alert_text"
-                                                        name="text"
-                                                        rows="20"
-                                                        class="w-full resize-y rounded-lg border border-gray-300 bg-gray-50 p-3 text-sm text-gray-900 focus:border-blue-500 focus:ring-blue-500"
-                                                    >
-                                                        {move || alert.with(|a| a.last_text.to_string())}
-                                                    </textarea>
-                                                    <input
-                                                        type="submit"
-                                                        value="Submit"
-                                                        class="mt-2 inline-flex cursor-pointer items-center justify-center rounded bg-blue-600 px-4 py-2 text-white hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                                                    />
-                                                    <AlertIdInput/>
-                                                </ActionForm>
-                                            </div>
-
-                                            <div class="flex-1 space-y-2">
-                                                <h2 class="text-lg font-medium text-gray-700">"Update Style"</h2>
-                                                <ActionForm action=update_alert_style>
-                                                    <label class="block text-sm font-medium text-gray-700" for="alert_style">
-                                                        "Style"
-                                                    </label>
-                                                    <textarea
-                                                        id="alert_style"
-                                                        name="style"
-                                                        rows="20"
-                                                        class="w-full resize-y rounded-lg border border-gray-300 bg-gray-50 p-3 text-sm text-gray-900 focus:border-blue-500 focus:ring-blue-500"
-                                                    >
-                                                        {move || alert.with(|a| a.last_style.to_string())}
-                                                    </textarea>
-                                                    <input
-                                                        type="submit"
-                                                        value="Submit"
-                                                        class="mt-2 inline-flex cursor-pointer items-center justify-center rounded bg-blue-600 px-4 py-2 text-white hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                                                    />
-                                                    <AlertIdInput/>
-                                                </ActionForm>
-                                            </div>
-                                        </div>
-
-                                        <AlertFields/>
-                                    </div>
-                                }.into_any()
-                            }
-                            Some(Err(e)) => view! {
-                                <p class="text-red-500">{format!("Error: {e}")}</p>
-                            }.into_any(),
-                            None => view! {
-                                <p>"Loading..."</p>
-                            }.into_any(),
-                        }
-                    }}
-                </ErrorBoundary>
-            </Suspense>
-        </div>
-    }
-}
-
-
-
-#[component()]
-#[track_caller]
-pub fn AlertFields() -> impl IntoView {
-    let add_field = ServerAction::<AddAlertField>::new();
-    let delete_field = ServerAction::<DeleteAlertField>::new();
-    let update_field = ServerAction::<UpdateAlertField>::new();
-    let alert: RwSignal<Alert> = use_context().unwrap();
-    let fields = RwSignal::new(
-        alert
-            .get_untracked()
-            .fields
-            .into_iter()
-            .map(|(id, field)| (id, RwSignal::new(field)))
-            .collect::<BTreeMap<AlertFieldId, _>>(),
-    );
-    let delete_field_action = Action::new(move |key: &AlertFieldId| {
-        let key = key.clone();
-        async move { delete_alert_field(alert.with_untracked(|a| a.alert_id.clone()), key).await }
-    });
-
-    let _res = Resource::new(
-        move || {
-            (
-                alert.with(|a| a.alert_id.clone()),
-                add_field.version().get(),
-                delete_field.version().get(),
-                delete_field_action.version().get(),
-                update_field.version().get(),
-            )
-        },
-        move |(id, ..)| async move {
-            let new_fields = crate::alerts::read_alert(id).await.expect("ehm").fields;
-            fields.update(|map| {
-                map.retain(|k, _| new_fields.iter().map(|(id, _)| id).any(|nk| nk == k));
-                for (nk, nv) in new_fields.into_iter() {
-                    map.entry(nk)
-                        .and_modify(|v| {
-                            if nv != v.get_untracked() {
-                                v.set(nv.clone());
-                            }
-                        })
-                        .or_insert_with(|| RwSignal::new(nv));
-                }
-            })
-        },
-    );
-
-    // list of AlertField's, with keys, using leptos For
-    view! {
-        <div class="flex items-start space-x-4 mb-4" >
-            <ActionForm action=add_field>
-                <AlertIdInput/>
-                <div class="flex flex-col space-y-4 mr-4">
-                <button class="cursor-pointer bg-blue-500 hover:bg-blue-700 text-white font-bold py-1 px-2 rounded text-sm" type="submit">"Add field"</button>
-                <select class = "border border-gray-300 rounded px-4 py-2" name="kind">
-                    <option value="text">"text"</option>
-                    <option value="counter">"counter"</option>
-                </select>
-                </div>
-                <div class="flex flex-col space-y-4 flex-grow">
-                <input class = "border border-gray-300 rounded px-4 py-2" type="text" name="name" placeholder="name"/>
-                <input class = "border border-gray-300 rounded px-4 py-2" type="text" name="value" placeholder="value"/>
-                </div>
+        <div class="flex items-center justify-between">
+            <ActionForm action=update_alert_name>
+            <h2 class="text-2xl font-bold flex items-center gap-2">Editing Alert:
+                <input type="text" name="alert_name" value=move || store.name().read().to_string() class="text-blue-600 font-bold border-b border-blue-300 bg-transparent focus:outline-none focus:border-blue-500" />
+            </h2>
+            <button class="rounded bg-red-500 px-4 py-2 text-sm text-white hover:bg-red-600">Delete Alert</button>
             </ActionForm>
-            <ul>
-                <For
-                    each=move || {let mut fields = fields.get().into_iter().collect::<Vec<_>>();
-                        fields.sort_by_key(|(_id, signal)| signal.get().0);
-                        fields
-                    }
-                    key=|value| value.0.clone()
-                    children=move | (name, field)| {
-                        view! {
-                            <li>
-                                <AlertField
-                                    id=name.clone()
-                                    on_delete=move |_| { delete_field_action.dispatch(name.clone()); }
-                                    update_action=update_field
-                                    field=field
-                                />
-                            </li>
-                        }
-                    }
-                />
-            </ul>
         </div>
     }
 }
 
 #[component]
-#[track_caller]
-pub fn AlertField<Delete>(
-    on_delete: Delete,
-    id: AlertFieldId,
-    update_action: ServerAction<UpdateAlertField>,
-    field: RwSignal<(AlertFieldName, AlertField)>,
-) -> impl IntoView
-where
-    Delete: Fn(leptos::ev::MouseEvent) + 'static,
-{
+pub fn AlertTextInputs(store: Store<Alert>) -> impl IntoView {
+    let update_alert_text = ServerAction::<UpdateAlertText>::new();
+    let update_alert_style = ServerAction::<UpdateAlertStyle>::new();
     view! {
-        <div>
-        <div class="flex flex-row">
-        //<button class="cursor-pointer py-2 rounded border-2 border-red-500 hover:border-red-900" on:click=on_delete>"𐄂"</button>
+        <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+        <ActionForm attr:class="relative" action=update_alert_text>
+          <label class="block text-sm font-medium text-gray-700">Alert Markdown</label>
+          <textarea id="text" class="mb-10 h-40 w-full resize-y rounded border p-2 font-mono text-sm" placeholder="Enter markdown..." name="text">{move ||store.read().render().to_string()}</textarea>
+          <div class="absolute right-2 bottom-2 z-10">
+            <button class="rounded bg-blue-600 px-4 py-1 text-sm text-white shadow hover:bg-blue-700" type="submit">Save</button>
+          </div>
+          <div class="absolute -top-6 left-0 hidden rounded bg-yellow-100 px-3 py-1 text-xs text-yellow-800 shadow-sm">Field updated elsewhere - <button class="underline">click to refresh</button></div>
+          <AlertIdInput store/>
+        </ActionForm>
 
-        <div class="contents"><ActionForm action=update_action>
-            <AlertIdInput/>
-            <input type="hidden" name="field_id" value=id/>
-            <input class="border border-gray-300 rounded px-4 py-2" type="text" name="field_name" value={move || field.get().0.to_string()}/>
-            {move || match field.get().1 {
-                AlertField::Text(value) => {
-                    view! {
-                        <input class="border border-gray-300 rounded px-4 py-2" type="text" name="value" value=value/>
-                    }.into_any()
-                }
-                AlertField::Counter(value) => {
-                    view! {
-                        <input class="border border-gray-300 rounded px-4 py-2" type="number" name="value" value=value/>
-                    }.into_any()
-                }
-            }}
-            <input class="rounded bg-blue-500 hover:bg-blue-700 text-white" type="submit" value="✓"/>
-        </ActionForm></div>
-        </div>
+        <ActionForm attr:class="relative" action=update_alert_style>
+          <label class="block text-sm font-medium text-gray-700">Custom CSS</label>
+          <textarea id="style" class="mb-10 h-40 w-full resize-y rounded border p-2 font-mono text-sm" placeholder="Enter CSS..." name="style">{move || store.read().render_style().to_string()}</textarea>
+          <div class="absolute right-2 bottom-2 z-10">
+            <button class="rounded bg-blue-600 px-4 py-1 text-sm text-white shadow hover:bg-blue-700" type="submit">Save</button>
+          </div>
+          <div class="absolute -top-6 left-0 hidden rounded bg-yellow-100 px-3 py-1 text-xs text-yellow-800 shadow-sm">Field updated elsewhere - <button class="underline">click to refresh</button></div>
+          <AlertIdInput store/>
+        </ActionForm>
+      </div>
+    }
+}
+
+#[component]
+pub fn AlertFieldInputs(store: Store<Alert>) -> impl IntoView {
+    view! {
+        <h3 class="mb-2 text-lg font-semibold">Fields</h3>
+        <div class="flex flex-col gap-3">
+            <For each=move || store.fields()
+                key=|field| field.read().0.clone()
+                let(field)
+            >
+                <AlertField store field/>
+            </For>
         </div>
     }
 }
 
 #[component]
-pub fn AlertIdInput() -> impl IntoView {
-    let alert = use_context::<RwSignal<Alert>>().unwrap();
+pub fn AlertField(
+    store: Store<Alert>,
+    field: reactive_stores::AtKeyed<
+        Store<Alert>,
+        Alert,
+        AlertFieldId,
+        Vec<(AlertFieldId, (AlertFieldName, AlertField))>,
+    >,
+) -> impl IntoView {
+    let update_alert_field = ServerAction::<UpdateAlertField>::new();
+    let (f1, f2, f3, f4, f5) = (
+        field.clone(),
+        field.clone(),
+        field.clone(),
+        field.clone(),
+        field.clone(),
+    );
+    let delete = Action::new(|(field_id, store): &(AlertFieldId, Store<Alert>)| {
+        let field_id = field_id.to_owned();
+        let store = store.clone();
+        async move {
+            delete_alert_field(store.alert_id().get(), field_id).await;
+        }
+    });
+    view! {
+        <ActionForm attr:class="relative rounded border bg-gray-50 p-4 shadow-sm" action=update_alert_field>
+            <div class="flex items-center justify-between">
+                <h4 class="font-medium">{move || f1.read().1.0.to_string()}</h4>
+                <button class="text-sm text-red-500 hover:underline" type="button" on:click=move |_| {
+                        let field_id = &f2.read().0;
+                        delete.dispatch((field_id.clone(), store));
+                        store.fields().write().retain(|f| &f.0 != field_id);
+                    }>Remove</button>
+            </div>
+            <div class="mt-2">
+                <input type={move || match f3.read().1.1 {
+                    AlertField::Text(_) => "text",
+                    AlertField::Counter(_) => "number",
+                }}
+                class="w-full rounded border p-2"
+                name={move || f4.read().1.0.to_string()}
+                value={move || f5.read().1.1.to_string()} />
+            </div>
+                <div class="mt-2 flex items-center justify-between">
+                <div class="hidden rounded bg-yellow-100 px-3 py-1 text-xs text-yellow-800 shadow-sm">Field updated elsewhere - <button class="underline">click to refresh</button></div>
+                <button class="rounded bg-blue-600 px-4 py-1 text-sm text-white shadow hover:bg-blue-700" type="submit">Save Field</button>
+            </div>
+        </ActionForm>
+    }
+}
+
+#[component]
+pub fn AlertIdInput(store: Store<Alert>) -> impl IntoView {
     view! {
         <input
             type="hidden"
             name="alert_id"
-            value={ move || alert.with(|a| a.alert_id.to_string())}/>
+            value={ move || store.alert_id().get().to_string()}/>
     }
 }
 

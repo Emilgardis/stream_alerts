@@ -20,7 +20,6 @@ pub struct AppState {
     pub alert_manager: new::AlertManager,
 }
 
-
 use crate::auth::User;
 
 #[component()]
@@ -33,8 +32,7 @@ pub fn App() -> impl IntoView {
         <Stylesheet id="leptos" href="/pkg/site.css"/>
         //<Title text="Welcome to Leptos"/>
         <Router >
-            <main class="flex items-center justify-center min-h-screen p-6 bg-gray-50">
-            <div class="w-full max-w-xl">
+        <main class="">
                 <Routes
                 fallback=|| view! { <p>"Loading..."</p> }
                 >
@@ -42,20 +40,19 @@ pub fn App() -> impl IntoView {
                         path=path!("/alert")
                         view=|| view!{<ListAlerts/>}
                     />
-                    <Route ssr=SsrMode::OutOfOrder
+                    <Route ssr=SsrMode::Async
                         path=path!("/alert/:id/update")
                         view=|| view! { <UpdateAlert/> }
                     />
-                    <Route ssr=SsrMode::OutOfOrder
+                    <Route ssr=SsrMode::Async
                         path=path!("/alert/new")
                         view=|| view! { <NewAlert/> }
                     />
-                    <Route ssr=SsrMode::OutOfOrder
+                    <Route ssr=SsrMode::Async
                         path=path!("/login")
                         view=move || view! { <Login/> }
                     />
                 </Routes>
-            </div>
             </main>
         </Router>
     }
