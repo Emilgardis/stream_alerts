@@ -16,6 +16,7 @@ use futures::{
 };
 use leptos::{prelude::*, server};
 use rand::Rng;
+use reactive_stores::Store;
 use std::{
     collections::{BTreeMap, HashMap},
     path::Path,
@@ -70,12 +71,12 @@ impl AlertManager {
         };
         let old = alert.clone();
         f(alert)?;
-        if old.last_text != alert.last_text {
+        if old.render() != alert.render() {
             let _ = self
                 .sender
                 .send(AlertMessage::new_message(alert_id.clone(), alert.render()));
         }
-        if old.last_style != alert.last_style {
+        if old.render_style() != alert.render_style() {
             let _ = self.sender.send(AlertMessage::new_style(
                 alert_id.clone(),
                 alert.render_style(),
@@ -105,7 +106,6 @@ impl AlertManager {
 }
 
 #[server(ReadAlert, "/backend")]
-#[tracing::instrument(err)]
 pub async fn read_alert(alert: AlertId) -> Result<Alert, ServerFnError> {
     let Some(alerts): Option<AlertManager> = use_context() else {
         tracing::info!("manager not found!");
@@ -118,7 +118,6 @@ pub async fn read_alert(alert: AlertId) -> Result<Alert, ServerFnError> {
 
     // do some server-only work here to access the database
     let alerts = alerts.alerts.read().await;
-    tracing::info!("alert_id = {alert}, alerts: {alerts:?}");
     Ok(alerts
         .get(&alert)
         .ok_or_else(|| {
@@ -130,8 +129,16 @@ pub async fn read_alert(alert: AlertId) -> Result<Alert, ServerFnError> {
 }
 
 #[server(ReadAllAlerts, "/backend")]
-#[tracing::instrument(err)]
 pub async fn read_all_alerts() -> Result<Vec<(AlertId, Alert)>, ServerFnError> {
+    let auth = leptos_axum::extract::<crate::auth::AuthSession>().await?;
+    if auth.user.is_none() {
+        leptos_axum::redirect("/login");
+        return Err(
+            ServerFnError::<leptos::server_fn::error::NoCustomError>::ServerError(
+                "Unauthorized".to_owned(),
+            ),
+        );
+    }
     // do some server-only work here to access the database
     let Some(alerts): Option<AlertManager> = use_context() else {
         tracing::info!("manager not found!");
@@ -444,15 +451,42 @@ impl AlertMessageRecv {
     }
 }
 
-#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize, Store)]
 pub struct Alert {
     pub alert_id: AlertId,
     pub last_text: AlertText,
     #[serde(default)]
     pub last_style: String,
     pub name: AlertName,
-    #[serde(default)]
-    pub fields: BTreeMap<AlertFieldId, (AlertFieldName, AlertField)>,
+    #[serde(default, deserialize_with = "deserialize_fields")]
+    #[store(key: AlertFieldId = |(id, _)| id.clone())]
+    pub fields: Vec<(AlertFieldId, (AlertFieldName, AlertField))>,
+}
+
+fn deserialize_fields<'de, D>(
+    deserializer: D,
+) -> Result<Vec<(AlertFieldId, (AlertFieldName, AlertField))>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let fields: serde_json::Value = serde::Deserialize::deserialize(deserializer)?;
+    // it's either a map or an array.
+    match fields {
+        serde_json::Value::Object(map) => {
+            let mut fields = Vec::with_capacity(map.len());
+            for (key, value) in map {
+                let id = AlertFieldId(key);
+                let (name, field) =
+                    serde_json::from_value(value).map_err(serde::de::Error::custom)?;
+                fields.push((id, (name, field)));
+            }
+            Ok(fields)
+        }
+        serde_json::Value::Array(_) => {
+            serde_json::from_value(fields).map_err(serde::de::Error::custom)
+        }
+        _ => Err(serde::de::Error::custom("invalid fields")),
+    }
 }
 
 #[derive(Clone, serde::Deserialize, serde::Serialize, Debug, PartialEq)]
@@ -510,13 +544,10 @@ impl Alert {
     pub fn entry_field_name(
         &mut self,
         field_name: AlertFieldName,
-    ) -> Option<std::collections::btree_map::Entry<'_, AlertFieldId, (AlertFieldName, AlertField)>>
-    {
-        let id = self
-            .fields
-            .iter()
-            .find_map(|(id, (name, _))| (name == &field_name).then(|| id.clone()));
-        id.map(|id| self.fields.entry(id))
+    ) -> Option<&mut (AlertFieldId, (AlertFieldName, AlertField))> {
+        self.fields
+            .iter_mut()
+            .find(|(_, (name, _))| (name == &field_name))
     }
 }
 
@@ -550,14 +581,14 @@ impl Alert {
             last_text,
             last_style: String::new(),
             name,
-            fields: BTreeMap::new(),
+            fields: Vec::new(),
         }
     }
 
     pub fn render(&self) -> AlertMarkdown {
         tracing::info!("and i op");
         let mut text = self.last_text.to_string();
-        for (name, value) in self.fields.values() {
+        for (name, value) in self.fields.iter().map(|(_, (n, v))| (n, v)) {
             text = text.replace(&format!("${name}"), &value.to_string());
         }
         text = text.replace("$$", "$");
@@ -567,7 +598,7 @@ impl Alert {
     pub fn render_style(&self) -> String {
         tracing::info!("and i op style");
         let mut text = self.last_style.to_string();
-        for (name, value) in self.fields.values() {
+        for (name, value) in self.fields.iter().map(|(_, (n, v))| (n, v)) {
             text = text.replace(&format!("${name}"), &value.to_string());
         }
         text = text.replace("$$", "$");
@@ -582,10 +613,11 @@ impl Alert {
         update: UpdateAlertField,
     ) -> Result<(), eyre::Report> {
         let field = match (name, id) {
-            (_, Some(id)) => self.fields.entry(id),
-            (Some(name), None) => self
-                .entry_field_name(name)
-                .ok_or_else(|| eyre::eyre!("no such field"))?,
+            (_, Some(id)) => self.fields.iter_mut().find(|(field_id, _)| field_id == &id),
+            (Some(name), None) => Some(
+                self.entry_field_name(name)
+                    .ok_or_else(|| eyre::eyre!("no such field"))?,
+            ),
             (None, None) => eyre::bail!("no field name or id provided"),
         };
 
@@ -598,8 +630,8 @@ impl Alert {
                     new: None,
                     kind: _,
                 },
-                std::collections::btree_map::Entry::Occupied(mut entry),
-            ) if entry.get().1.can_incr() => entry.get_mut().1.incr(incr),
+                Some(mut entry),
+            ) if entry.1.1.can_incr() => entry.1 .1.incr(incr),
             (
                 UpdateAlertField {
                     incr: None,
@@ -608,8 +640,8 @@ impl Alert {
                     new: None,
                     kind: _,
                 },
-                std::collections::btree_map::Entry::Occupied(mut entry),
-            ) if entry.get().1.can_incr() => entry.get_mut().1.incr(-decr),
+                Some(mut entry),
+            ) if entry.1 .1.can_incr() => entry.1 .1.incr(-decr),
             (
                 UpdateAlertField {
                     incr: None,
@@ -618,8 +650,8 @@ impl Alert {
                     new: None,
                     kind: _,
                 },
-                std::collections::btree_map::Entry::Occupied(mut entry),
-            ) => entry.get_mut().1.set(set)?,
+                Some(mut entry),
+            ) => entry.1 .1.set(set)?,
             (
                 UpdateAlertField {
                     incr: None,
@@ -628,15 +660,19 @@ impl Alert {
                     new: Some(value),
                     kind: Some(kind),
                 },
-                std::collections::btree_map::Entry::Occupied(mut entry),
+                opt_entry,
             ) => match kind.as_str() {
                 "counter" => {
                     let value = value.parse()?;
-                    entry.get_mut().1 = AlertField::Counter(value);
+                    match opt_entry {
+                        Some(entry) => entry.1 .1 = AlertField::Counter(value),
+                        None => return Err(eyre::eyre!("invalid update requested")),
+                    }
                 }
-                "text" => {
-                    entry.get_mut().1 = AlertField::Text(value);
-                }
+                "text" => match opt_entry {
+                    Some(entry) => entry.1 .1 = AlertField::Text(value),
+                    None => return Err(eyre::eyre!("invalid update requested")),
+                },
                 _ => return Err(eyre::eyre!("invalid kind")),
             },
             _ => return Err(eyre::eyre!("invalid update requested")),
@@ -654,15 +690,16 @@ impl Alert {
     ) -> Result<(), eyre::Report> {
         tracing::debug!("adding new field");
         match kind {
-            "counter" => self.fields.insert(
+            "counter" => self.fields.push((
                 AlertFieldId::new_id(),
                 (name, AlertField::Counter(value.parse()?)),
-            ),
+            )),
             "text" => self
                 .fields
-                .insert(AlertFieldId::new_id(), (name, AlertField::Text(value))),
+                .push((AlertFieldId::new_id(), (name, AlertField::Text(value)))),
             _ => return Err(eyre::eyre!("invalid kind")),
         };
+        self.fields.sort_by(|a, b| a.0.cmp(&b.0));
         Ok(())
     }
 }
@@ -731,7 +768,7 @@ macro_rules! attr_type {
     };
 }
 
-#[aliri_braid::braid(serde)]
+#[aliri_braid::braid(serde, owned_attr(derive(Store)))]
 pub struct AlertId;
 attr_type!(AlertId);
 
@@ -741,22 +778,22 @@ impl AlertId {
     }
 }
 
-#[aliri_braid::braid(serde)]
+#[aliri_braid::braid(serde, owned_attr(derive(Store)))]
 pub struct AlertName;
 attr_type!(AlertName);
 
-#[aliri_braid::braid(serde)]
+#[aliri_braid::braid(serde, owned_attr(derive(Store)))]
 pub struct AlertMarkdown;
 
-#[aliri_braid::braid(serde)]
+#[aliri_braid::braid(serde, owned_attr(derive(Store)))]
 pub struct AlertText;
 attr_type!(AlertText);
 
-#[aliri_braid::braid(serde)]
+#[aliri_braid::braid(serde, owned_attr(derive(Store)))]
 pub struct AlertFieldName;
 attr_type!(AlertFieldName);
 
-#[aliri_braid::braid(serde)]
+#[aliri_braid::braid(serde, owned_attr(derive(Store)))]
 pub struct AlertFieldId;
 attr_type!(AlertFieldId);
 
