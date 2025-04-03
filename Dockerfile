@@ -12,7 +12,8 @@ RUN curl --proto '=https' --tlsv1.2 -LsSf https://github.com/leptos-rs/cargo-lep
 COPY . .
 RUN --mount=type=cache,target=/usr/local/cargo/git \
     --mount=type=cache,target=/usr/local/cargo/registry \
-    cargo -V; cargo leptos -V; cargo leptos build --release -vv && cp -r /app/target/release/ /app/ && cp -r /app/target/site /app/
+    --mount=type=cache,target=/app/target \
+    cargo -V; cargo leptos -V; cargo leptos build && cargo leptos build --release -vv && cp -r /app/target/release/ /app/ && cp -r /app/target/site /app/
 FROM debian:bullseye-slim as runtime
 WORKDIR /app
 ARG RUN_DEPS
