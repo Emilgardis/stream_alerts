@@ -173,7 +173,7 @@ pub fn AlertFields() -> impl IntoView {
         move |(id, ..)| async move {
             let new_fields = crate::alerts::read_alert(id).await.expect("ehm").fields;
             fields.update(|map| {
-                map.retain(|k, _| new_fields.keys().any(|nk| nk == k));
+                map.retain(|k, _| new_fields.iter().map(|(id, _)| id).any(|nk| nk == k));
                 for (nk, nv) in new_fields.into_iter() {
                     map.entry(nk)
                         .and_modify(|v| {
@@ -324,7 +324,7 @@ pub async fn update_alert_style(alert_id: AlertId, style: String) -> Result<Aler
 
     manager
         .edit_alert(&alert_id, move |alert| {
-            alert.last_style = style.into();
+            alert.last_style = style;
         })
         .await?;
 
@@ -347,12 +347,10 @@ pub async fn update_alert_field(
 
     manager
         .try_edit_alert(&alert_id, move |alert| {
-            if let std::collections::btree_map::Entry::Occupied(mut entry) =
-                alert.fields.entry(field_id)
-            {
-                entry.get_mut().1.set(value)?;
+            if let Some(mut entry) = alert.fields.iter_mut().find(|f| f.0 == field_id) {
+                entry.1 .1.set(value)?;
                 if let Some(new_field_name) = field_name {
-                    entry.get_mut().0 = new_field_name;
+                    entry.1 .0 = new_field_name;
                 }
             }
             Ok(())
@@ -380,7 +378,7 @@ pub async fn delete_alert_field(
 
     manager
         .edit_alert(&alert_id, move |alert| {
-            alert.fields.remove(&field);
+            alert.fields.retain(|k| &k.0 != &field);
         })
         .await?;
 
