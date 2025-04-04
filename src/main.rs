@@ -104,11 +104,6 @@ async fn main() -> Result<(), eyre::Report> {
                         tracing::info_span!("server_fn", server_fn = path.0, auth.user = ?auth.user.as_ref().map(|u| &u.name));
                     tracing::Instrument::instrument(
                         async move {
-                            if auth.user.is_none() && !path.0.contains("public/") {
-                                tracing::warn!("Unauthorized access");
-                                return (http::StatusCode::UNAUTHORIZED, "Unauthorized")
-                                    .into_response();
-                            }
                             if auth.user.is_some() {
                                 tracing::debug!("authorized access");
                             } else {

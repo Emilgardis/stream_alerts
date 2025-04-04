@@ -20,6 +20,7 @@ pub fn UpdateAlert() -> impl IntoView {
     let update_alert_text = ServerAction::<UpdateAlertText>::new();
     let update_alert_style = ServerAction::<UpdateAlertStyle>::new();
     let update_alert_name = ServerAction::<UpdateAlertName>::new();
+    let update_alert_refresh = ServerAction::<UpdateAlertRefresh>::new();
 
     view! {
         <div class="p-4">
@@ -46,6 +47,15 @@ pub fn UpdateAlert() -> impl IntoView {
                                                     "View"
                                                 </A>
                                             </div>
+                                            <ActionForm action=update_alert_refresh>
+                                                <AlertIdInput/>
+                                                <input
+                                                    type="submit"
+                                                    value="Refresh Connected"
+                                                    class="text-sm cursor-pointer bg-blue-600 px-3 py-1 rounded text-white hover:bg-blue-700
+                                                           focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                                />
+                                            </ActionForm>
                                         </div>
 
                                         <div>
@@ -277,6 +287,18 @@ pub fn AlertIdInput() -> impl IntoView {
             name="alert_id"
             value={ move || alert.with(|a| a.alert_id.to_string())}/>
     }
+}
+
+#[server(UpdateAlertRefresh, "/backend")]
+#[tracing::instrument(err)]
+pub async fn update_alert_refresh(alert_id: AlertId) -> Result<(), ServerFnError> {
+    let Some(manager): Option<AlertManager> = use_context() else {
+        return Err(ServerFnError::ServerError("Missing manager".to_owned()));
+    };
+
+    manager
+        .sender.send(AlertMessage::Update { alert_id });
+    Ok(())
 }
 
 #[server(UpdateAlertName, "/backend")]
