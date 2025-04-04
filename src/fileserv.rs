@@ -1,17 +1,17 @@
 use cfg_if::cfg_if;
-use leptos::error::Errors;
 
 cfg_if! { if #[cfg(feature = "ssr")] {
+    use leptos::error::Errors;
     use axum::{
         body::{Body},
-        extract::{self, Extension},
+        extract::{self},
         response::IntoResponse,
         http::{Request, Response, StatusCode, Uri},
     };
     use axum::response::Response as AxumResponse;
     use tower::ServiceExt;
     use tower_http::services::ServeDir;
-    use std::sync::Arc;
+
     use leptos::prelude::*;
     use crate::error_template::{ErrorTemplate};
     use crate::error_template::AppError;

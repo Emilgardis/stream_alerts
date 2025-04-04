@@ -1,5 +1,5 @@
 use leptos::prelude::*;
-use leptos_router::{components::A, *};
+use leptos_router::components::A;
 
 pub use crate::alerts::*;
 

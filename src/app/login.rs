@@ -1,6 +1,6 @@
 use leptos::prelude::*;
 use leptos_router::{
-    components::{Redirect, A},
+    components::Redirect,
     *,
 };
 
@@ -42,7 +42,7 @@ pub async fn login(username: String, password: String) -> Result<bool, ServerFnE
 
     let res_options_outer = use_context::<leptos_axum::ResponseOptions>();
     tracing::info!("got login request");
-    if let Some(res_options) = res_options_outer {
+    if let Some(_res_options) = res_options_outer {
         let Some(user) = auth
             .authenticate((username, password.as_bytes().to_vec()))
             .await?
