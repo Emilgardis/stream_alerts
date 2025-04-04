@@ -5,7 +5,6 @@ use leptos_meta::*;
 use leptos_router::{components::A, *};
 
 pub use super::login::*;
-pub use crate::alerts::*;
 
 #[track_caller]
 #[component()]
@@ -154,7 +153,6 @@ pub fn UpdateAlert() -> impl IntoView {
 #[track_caller]
 pub fn AlertFields() -> impl IntoView {
     let add_field = ServerAction::<AddAlertField>::new();
-    let delete_field = ServerAction::<DeleteAlertField>::new();
     let update_field = ServerAction::<UpdateAlertField>::new();
     let alert: RwSignal<Alert> = use_context().unwrap();
     let fields = RwSignal::new(
@@ -175,7 +173,6 @@ pub fn AlertFields() -> impl IntoView {
             (
                 alert.with(|a| a.alert_id.clone()),
                 add_field.version().get(),
-                delete_field.version().get(),
                 delete_field_action.version().get(),
                 update_field.version().get(),
             )
@@ -226,7 +223,6 @@ pub fn AlertFields() -> impl IntoView {
                             <li>
                                 <AlertField
                                     id=name.clone()
-                                    on_delete=move |_| { delete_field_action.dispatch(name.clone()); }
                                     update_action=update_field
                                     field=field
                                 />
@@ -241,15 +237,11 @@ pub fn AlertFields() -> impl IntoView {
 
 #[component]
 #[track_caller]
-pub fn AlertField<Delete>(
-    on_delete: Delete,
+pub fn AlertField(
     id: AlertFieldId,
     update_action: ServerAction<UpdateAlertField>,
     field: RwSignal<(AlertFieldName, AlertField)>,
-) -> impl IntoView
-where
-    Delete: Fn(leptos::ev::MouseEvent) + 'static,
-{
+) -> impl IntoView {
     view! {
         <div>
         <div class="flex flex-row">
@@ -297,7 +289,7 @@ pub async fn update_alert_refresh(alert_id: AlertId) -> Result<(), ServerFnError
     };
 
     manager
-        .sender.send(AlertMessage::Update { alert_id });
+        .sender.send(AlertMessage::Update { alert_id })?;
     Ok(())
 }
 
@@ -369,7 +361,7 @@ pub async fn update_alert_field(
 
     manager
         .try_edit_alert(&alert_id, move |alert| {
-            if let Some(mut entry) = alert.fields.iter_mut().find(|f| f.0 == field_id) {
+            if let Some(entry) = alert.fields.iter_mut().find(|f| f.0 == field_id) {
                 entry.1 .1.set(value)?;
                 if let Some(new_field_name) = field_name {
                     entry.1 .0 = new_field_name;
@@ -400,7 +392,7 @@ pub async fn delete_alert_field(
 
     manager
         .edit_alert(&alert_id, move |alert| {
-            alert.fields.retain(|k| &k.0 != &field);
+            alert.fields.retain(|k| k.0 != field);
         })
         .await?;
 

@@ -4,19 +4,16 @@ async fn main() -> Result<(), eyre::Report> {
     use axum::{
         extract::{self, Extension},
         routing::post,
-        Router, ServiceExt,
+        Router,
     };
     use leptos::prelude::*;
     use leptos_axum::{generate_route_list, LeptosRoutes};
-    use std::{collections::HashMap, sync::Arc};
+
     use stream_alerts::fileserv::file_and_error_handler;
-    use stream_alerts::{
-        alerts::{Alert, AlertId, AlertMessage},
-        app::*,
-    };
-    use tokio::sync::{broadcast, RwLock};
+    use stream_alerts::app::*;
+
     use tower_http::trace::{DefaultMakeSpan, MakeSpan, TraceLayer};
-    use tracing::instrument;
+
 
     async fn leptos_handler(
         auth: stream_alerts::auth::AuthSession,
@@ -109,9 +106,6 @@ async fn main() -> Result<(), eyre::Report> {
                             } else {
                                 tracing::debug!("public access");
                             }
-                            let path = axum::extract::Path(
-                                path.0.trim_start_matches("public/").to_owned(),
-                            );
                             leptos_axum::handle_server_fns_with_context(
                                 move || {
                                     provide_context::<stream_alerts::alerts::AlertManager>(

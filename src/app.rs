@@ -4,7 +4,6 @@ pub mod new;
 pub mod update;
 
 use list::*;
-use login::*;
 use new::*;
 use update::*;
 
@@ -21,7 +20,6 @@ pub struct AppState {
 }
 
 
-use crate::auth::User;
 
 #[component()]
 #[track_caller]

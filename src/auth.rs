@@ -2,7 +2,7 @@
 use std::sync::Arc;
 #[cfg(feature = "ssr")]
 use tokio::sync::RwLock;
-
+#[cfg(feature = "ssr")]
 use crate::opts::Opts;
 
 #[cfg(feature = "ssr")]
@@ -151,7 +151,7 @@ pub async fn setup(
     axum_login::AuthManagerLayer<Users, SessionStore>,
     eyre::Report,
 > {
-    use rand::Rng;
+
 
     let user_store = Users::empty();
 

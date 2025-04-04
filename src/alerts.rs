@@ -1,3 +1,4 @@
+#[cfg(feature = "ssr")]
 use askama::Template;
 
 #[cfg(feature = "ssr")]
@@ -6,19 +7,22 @@ use axum::{extract, http::StatusCode};
 use axum::{
     extract::ws::{self, WebSocket},
     response::IntoResponse,
-    routing::get,
     Extension,
 };
+#[cfg(feature = "ssr")]
 use eyre::Context;
+#[cfg(feature = "ssr")]
 use futures::{
     stream::{SplitSink, SplitStream},
     StreamExt,
 };
 use leptos::{prelude::*, server};
+#[cfg(feature = "ssr")]
 use rand::Rng;
 use reactive_stores::Store;
+#[cfg(feature = "ssr")]
 use std::{
-    collections::{BTreeMap, HashMap},
+    collections::HashMap,
     path::Path,
     sync::Arc,
 };
@@ -28,12 +32,11 @@ use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     sync::{broadcast, RwLock},
 };
-
+#[cfg(feature = "ssr")]
 use crate::opts::Opts;
 
 #[derive(Clone)]
 #[cfg(feature = "ssr")]
-
 pub struct AlertManager {
     alerts: Arc<RwLock<HashMap<AlertId, Alert>>>,
     pub sender: broadcast::Sender<AlertMessage>,
@@ -155,8 +158,6 @@ pub async fn read_all_alerts() -> Result<Vec<(AlertId, Alert)>, ServerFnError> {
 #[cfg(feature = "ssr")]
 pub async fn setup<S>(opts: &Opts) -> Result<(axum::Router<S>, AlertManager), eyre::Report> {
     use axum::{
-        extract::{Path, State, WebSocketUpgrade},
-        response::IntoResponse,
         routing::get,
         Router,
     };
@@ -183,6 +184,7 @@ pub async fn setup<S>(opts: &Opts) -> Result<(axum::Router<S>, AlertManager), ey
 
 #[derive(Template)]
 #[template(path = "alert.html", escape = "none")]
+#[cfg(feature = "ssr")]
 struct AlertSite {
     alert_id: AlertId,
     alert_name: AlertName,
@@ -193,16 +195,19 @@ struct AlertSite {
 
 #[derive(Template)]
 #[template(path = "404.html")]
+#[cfg(feature = "ssr")]
 struct NotFound {
     id: String,
 }
 
+#[cfg(feature = "ssr")]
 impl NotFound {
     fn new(id: String) -> Self {
         Self { id }
     }
 }
 
+#[cfg(feature = "ssr")]
 impl AlertSite {
     pub fn new(
         alert_id: AlertId,
@@ -278,6 +283,8 @@ pub struct UpdateAlertQuery {
 }
 
 #[derive(serde::Deserialize)]
+#[cfg_attr(feature = "hydrate", allow(dead_code))]
+
 pub struct UpdateAlertField {
     incr: Option<i32>,
     decr: Option<i32>,
@@ -463,6 +470,7 @@ pub struct Alert {
     pub fields: Vec<(AlertFieldId, (AlertFieldName, AlertField))>,
 }
 
+#[allow(clippy::type_complexity)]
 fn deserialize_fields<'de, D>(
     deserializer: D,
 ) -> Result<Vec<(AlertFieldId, (AlertFieldName, AlertField))>, D::Error>
@@ -501,6 +509,7 @@ impl Default for AlertField {
     }
 }
 
+#[cfg(feature = "ssr")]
 impl AlertField {
     pub(crate) fn set(&mut self, set: String) -> Result<(), eyre::Report> {
         match self {
@@ -606,6 +615,7 @@ impl Alert {
         text
     }
 
+    #[cfg(feature = "ssr")]
     fn update_field(
         &mut self,
         name: Option<AlertFieldName>,
@@ -630,7 +640,7 @@ impl Alert {
                     new: None,
                     kind: _,
                 },
-                Some(mut entry),
+                Some(entry),
             ) if entry.1.1.can_incr() => entry.1 .1.incr(incr),
             (
                 UpdateAlertField {
@@ -640,7 +650,7 @@ impl Alert {
                     new: None,
                     kind: _,
                 },
-                Some(mut entry),
+                Some(entry),
             ) if entry.1 .1.can_incr() => entry.1 .1.incr(-decr),
             (
                 UpdateAlertField {
@@ -650,7 +660,7 @@ impl Alert {
                     new: None,
                     kind: _,
                 },
-                Some(mut entry),
+                Some(entry),
             ) => entry.1 .1.set(set)?,
             (
                 UpdateAlertField {

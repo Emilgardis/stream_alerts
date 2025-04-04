@@ -1,7 +1,5 @@
-use std::collections::BTreeMap;
 
 use leptos::prelude::*;
-use leptos_meta::*;
 use leptos_router::{components::A, *};
 
 pub use super::login::*;
@@ -10,7 +8,7 @@ pub use crate::alerts::*;
 #[component]
 #[track_caller]
 pub fn ListAlerts() -> impl IntoView {
-    let params = hooks::use_params_map();
+    let _params = hooks::use_params_map();
 
     let alerts = Resource::new_blocking(
         move || (),
@@ -37,8 +35,9 @@ pub fn ListAlerts() -> impl IntoView {
                     />
                     </ul>
                 }.into_any(),
-                _ => view! {
-                }.into_any(),
+                _ => {
+                    ().into_any()
+                },
             }
         }}
         </Suspense>
