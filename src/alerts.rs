@@ -2,6 +2,8 @@
 use askama::Template;
 
 #[cfg(feature = "ssr")]
+use crate::opts::Opts;
+#[cfg(feature = "ssr")]
 use axum::{extract, http::StatusCode};
 #[cfg(feature = "ssr")]
 use axum::{
@@ -21,19 +23,13 @@ use leptos::{prelude::*, server};
 use rand::Rng;
 use reactive_stores::Store;
 #[cfg(feature = "ssr")]
-use std::{
-    collections::HashMap,
-    path::Path,
-    sync::Arc,
-};
+use std::{collections::HashMap, path::Path, sync::Arc};
 #[cfg(feature = "ssr")]
 use tokio::{
     fs::OpenOptions,
     io::{AsyncReadExt, AsyncWriteExt},
     sync::{broadcast, RwLock},
 };
-#[cfg(feature = "ssr")]
-use crate::opts::Opts;
 
 #[derive(Clone)]
 #[cfg(feature = "ssr")]
@@ -89,6 +85,17 @@ impl AlertManager {
 
         alert.save_alert(&self.db_path).await.expect("oops");
         Ok(Ok(()))
+    }
+
+    pub async fn get_alert(
+        &self,
+        alert_id: &AlertId,
+    ) -> Result<Alert, leptos::server_fn::ServerFnError> {
+        let alerts = self.read_alerts().await;
+        let Some(alert) = alerts.get(alert_id) else {
+            return Err(ServerFnError::ServerError("no such alert".to_owned()));
+        };
+        Ok(alert.clone())
     }
 
     pub async fn new_alert(&self, alert: Alert) -> Result<(), leptos::server_fn::ServerFnError> {
@@ -157,10 +164,7 @@ pub async fn read_all_alerts() -> Result<Vec<(AlertId, Alert)>, ServerFnError> {
 
 #[cfg(feature = "ssr")]
 pub async fn setup<S>(opts: &Opts) -> Result<(axum::Router<S>, AlertManager), eyre::Report> {
-    use axum::{
-        routing::get,
-        Router,
-    };
+    use axum::{routing::get, Router};
 
     let (sender, _) = broadcast::channel(16);
     let map = Arc::new(RwLock::new(HashMap::<AlertId, Alert>::new()));
@@ -176,6 +180,7 @@ pub async fn setup<S>(opts: &Opts) -> Result<(axum::Router<S>, AlertManager), ey
         .route("/ws/:id", get(handler))
         .route("/:id", get(serve_alert))
         .route("/:id/update/:field", get(update_alert_field))
+        .route("/:id/get/:field", get(get_alert_field))
         .with_state(sender.clone())
         .with_state(map.clone());
 
@@ -299,16 +304,41 @@ async fn update_alert_field(
     Extension(manager): Extension<AlertManager>,
     extract::Query(update): extract::Query<UpdateAlertField>,
 ) -> axum::response::Response {
+    let field_c = field.clone();
     match manager
         .try_edit_alert(&alert_id, |a| {
-            a.update_field(Some(field), None, update)
+            a.update_field(Some(field_c), None, update)
                 .map_err(|error| (StatusCode::BAD_REQUEST, error.to_string()).into_response())
         })
         .await
     {
-        Ok(Ok(_)) => (StatusCode::OK, "done!").into_response(),
+        Ok(Ok(_)) => (
+            StatusCode::OK,
+            manager
+                .get_alert(&alert_id)
+                .await
+                .expect("this alert should exist")
+                .get_alert_field(&field)
+                .expect("this field should exist")
+                .to_string(),
+        )
+            .into_response(),
         Ok(Err(e)) => (StatusCode::BAD_REQUEST, e.to_string()).into_response(),
         Err(e) => e,
+    }
+}
+
+#[cfg(feature = "ssr")]
+async fn get_alert_field(
+    extract::Path((alert_id, field)): extract::Path<(AlertId, AlertFieldName)>,
+    Extension(manager): Extension<AlertManager>,
+) -> axum::response::Response {
+    match manager.get_alert(&alert_id).await {
+        Ok(alert) => match alert.get_alert_field(&field) {
+            Some(field) => (StatusCode::OK, field.to_string()).into_response(),
+            None => (StatusCode::BAD_REQUEST, format!("no such field {}", field)).into_response(),
+        },
+        Err(e) => (StatusCode::BAD_REQUEST, e.to_string()).into_response(),
     }
 }
 
@@ -558,6 +588,13 @@ impl Alert {
             .iter_mut()
             .find(|(_, (name, _))| (name == &field_name))
     }
+
+    pub fn get_alert_field(&self, field_name: &AlertFieldName) -> Option<&AlertField> {
+        self.fields
+            .iter()
+            .find(|(_, (name, _))| name == field_name)
+            .map(|(_, (_, field))| field)
+    }
 }
 
 impl Alert {
@@ -641,7 +678,7 @@ impl Alert {
                     kind: _,
                 },
                 Some(entry),
-            ) if entry.1.1.can_incr() => entry.1 .1.incr(incr),
+            ) if entry.1 .1.can_incr() => entry.1 .1.incr(incr),
             (
                 UpdateAlertField {
                     incr: None,
